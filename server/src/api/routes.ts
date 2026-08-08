@@ -6,7 +6,7 @@
 // parse of intent) -> evaluateParsedIntent (guardrail, the actual authority)
 // -> either dispatch immediately, stash as a pending confirmation, or reject.
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { mkdir, writeFile, readdir, stat } from "node:fs/promises";
 import express, { type Request, type Response, type NextFunction } from "express";
 import type { Pool } from "pg";
@@ -27,6 +27,8 @@ import { loginRateLimiter, createOrgRateLimiter } from "../security/rateLimiter.
 import { PendingActionStore } from "./pendingActions.js";
 import { verifyCredentials, listUsers, createUser, updateUserRole, updateUserProfile, resetPassword, deleteUser, otherAdminCount, DuplicateUsernameError } from "../auth/users.js";
 import { resolveOrgBySubdomain } from "../auth/orgResolver.js";
+import { createSetupToken, consumeSetupToken } from "../auth/passwordSetup.js";
+import { sendSetupLinkEmail } from "../notifications/channels/email.js";
 import { createSession, deleteSession, validateSession, type Session } from "../auth/sessions.js";
 import { requireRole } from "../auth/roles.js";
 import { listAssets, listUnregisteredAgents, nextAssetTag, createAsset, updateAsset, deleteAsset } from "../assets/assetsStore.js";
@@ -94,13 +96,24 @@ const ResetOrgUserPasswordRequestSchema = z.object({
   password: z.string().min(8).max(200),
 });
 
+// adminPassword is optional — when omitted (the dashboard's default, see
+// CreateOrgModal), the new admin gets a self-service setup link instead of
+// the platform admin choosing a password and relaying it manually. Kept
+// available for CLI/scripted org creation, where there's no natural way to
+// deliver a setup link and the caller controls the account directly.
 const CreateOrgRequestSchema = z.object({
   name: z.string().min(1).max(200),
   subdomain: z.string().min(1).max(63),
   adminUsername: z.string().min(1).max(100),
-  adminPassword: z.string().min(8).max(200),
+  adminPassword: z.string().min(8).max(200).optional(),
   adminFirstName: z.string().min(1).max(100),
   adminLastName: z.string().min(1).max(100),
+  adminEmail: z.string().email().max(200).optional(),
+});
+
+const SetupPasswordRequestSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8).max(200),
 });
 
 // customDomain: null clears it, reverting the org to the shared
@@ -255,6 +268,27 @@ export function buildRouter(
       // platform owner's own admins — see orgsStore.ts's PLATFORM_ORG_ID.
       const isPlatformAdmin = user.role === "admin" && org.id === PLATFORM_ORG_ID;
       res.json({ token, username: user.username, role: user.role, isPlatformAdmin });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Public — gated purely by possession of the one-time token, same as
+  // login is gated by possession of a password. Lets a freshly created
+  // org's admin set their own password from the setup link instead of a
+  // platform admin choosing one and relaying it manually (see POST /orgs).
+  router.post("/auth/setup-password", loginRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = SetupPasswordRequestSchema.parse(req.body);
+      const ok = await consumeSetupToken(pool, body.token, body.password);
+      if (!ok) {
+        // Generic on purpose — don't distinguish "never existed" from
+        // "expired" from "already used" to a caller who only has the token.
+        res.status(400).json({ error: "This setup link is invalid or has expired." });
+        return;
+      }
+      audit.info({}, "auth: password set via setup link");
+      res.status(204).end();
     } catch (err) {
       next(err);
     }
@@ -423,18 +457,51 @@ export function buildRouter(
       // cached at all).
       await orgCredentials.reload(pool);
 
-      const firstAdmin = await createUser(pool, created.org.id, body.adminUsername, body.adminPassword, "admin", {
+      // No adminPassword supplied (the dashboard's default) → generate one
+      // that's never surfaced anywhere and mint a self-service setup link
+      // instead, so the real password is chosen by the customer, not typed
+      // by the platform admin and relayed over chat/email. Supplying
+      // adminPassword explicitly (CLI/scripted org creation) skips all of
+      // this and behaves exactly as before.
+      const usesSetupLink = !body.adminPassword;
+      const adminPassword = body.adminPassword ?? randomBytes(32).toString("hex");
+      const firstAdmin = await createUser(pool, created.org.id, body.adminUsername, adminPassword, "admin", {
         firstName: body.adminFirstName,
         lastName: body.adminLastName,
-        email: null,
+        email: body.adminEmail ?? null,
       });
 
-      audit.info({ requestedBy: req.user!.username, orgId: created.org.id, subdomain, adminUsername: firstAdmin.username }, "orgs: created");
+      let setupLink: string | null = null;
+      let setupLinkEmailed = false;
+      if (usesSetupLink) {
+        const token = await createSetupToken(pool, firstAdmin.id);
+        const base = cfg.http.orgDomainSuffix ? `https://${subdomain}${cfg.http.orgDomainSuffix}` : cfg.http.dashboardOrigins[0];
+        setupLink = `${base}/setup-password?token=${token}`;
+        if (cfg.notifications.email && body.adminEmail) {
+          try {
+            await sendSetupLinkEmail(cfg.notifications.email, body.adminEmail, created.org.name, setupLink);
+            setupLinkEmailed = true;
+          } catch (err) {
+            // Not fatal — the org and admin account both exist and the
+            // link is still returned below for the platform admin to relay
+            // manually, so an SMTP hiccup here shouldn't look like the
+            // whole org-creation request failed.
+            audit.warn({ err, orgId: created.org.id }, "orgs: setup link email failed to send");
+          }
+        }
+      }
+
+      audit.info(
+        { requestedBy: req.user!.username, orgId: created.org.id, subdomain, adminUsername: firstAdmin.username, usesSetupLink },
+        "orgs: created",
+      );
       res.status(201).json({
         org: created.org,
         agentAuthToken: created.agentAuthToken,
         agentHmacSecret: created.agentHmacSecret,
         admin: firstAdmin,
+        setupLink,
+        setupLinkEmailed,
       });
     } catch (err) {
       if (err instanceof DuplicateSubdomainError) {
@@ -508,6 +575,51 @@ export function buildRouter(
         await resetPassword(pool, orgId, userId, body.password);
         audit.info({ requestedBy: req.user!.username, orgId, targetUserId: userId }, "orgs: user password reset by platform admin");
         res.status(204).end();
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  // For the "setup link expired before the customer used it" case — mints
+  // a fresh token (the old one, if any, is simply left to expire; it's
+  // already single-use so it can't be replayed) and returns/re-sends it,
+  // same shape as POST /orgs's original setup-link response.
+  router.post(
+    "/orgs/:id/users/:userId/resend-invite",
+    requirePlatformAdmin,
+    async (req: AuthedRequest, res: Response, next: NextFunction) => {
+      try {
+        const orgId = req.params.id ?? "";
+        const userId = req.params.userId ?? "";
+        const { rows } = await pool.query<{ email: string | null; org_name: string; subdomain: string }>(
+          `SELECT u.email, o.name AS org_name, o.subdomain
+           FROM users u JOIN organizations o ON o.id = u.org_id
+           WHERE u.id = $1 AND u.org_id = $2`,
+          [userId, orgId],
+        );
+        const row = rows[0];
+        if (!row) {
+          res.status(404).json({ error: "user not found" });
+          return;
+        }
+
+        const token = await createSetupToken(pool, userId);
+        const base = cfg.http.orgDomainSuffix ? `https://${row.subdomain}${cfg.http.orgDomainSuffix}` : cfg.http.dashboardOrigins[0];
+        const setupLink = `${base}/setup-password?token=${token}`;
+
+        let setupLinkEmailed = false;
+        if (cfg.notifications.email && row.email) {
+          try {
+            await sendSetupLinkEmail(cfg.notifications.email, row.email, row.org_name, setupLink);
+            setupLinkEmailed = true;
+          } catch (err) {
+            audit.warn({ err, orgId, targetUserId: userId }, "orgs: resend-invite email failed to send");
+          }
+        }
+
+        audit.info({ requestedBy: req.user!.username, orgId, targetUserId: userId }, "orgs: setup link resent by platform admin");
+        res.json({ setupLink, setupLinkEmailed });
       } catch (err) {
         next(err);
       }

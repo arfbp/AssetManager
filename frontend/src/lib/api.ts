@@ -325,15 +325,24 @@ export interface CreateOrgResult {
   agentAuthToken: string;
   agentHmacSecret: string;
   admin: UserSummary;
+  // Null only when adminPassword was supplied directly instead (not the
+  // dashboard's path — see createOrganization below). Always present
+  // otherwise: the platform admin's fallback if setupLinkEmailed is false.
+  setupLink: string | null;
+  setupLinkEmailed: boolean;
 }
 
+// adminPassword omitted (the normal dashboard path) → the new admin gets a
+// self-service setup link (see CreateOrgResult.setupLink) instead of the
+// platform admin choosing a password directly.
 export function createOrganization(input: {
   name: string;
   subdomain: string;
   adminUsername: string;
-  adminPassword: string;
+  adminPassword?: string;
   adminFirstName: string;
   adminLastName: string;
+  adminEmail?: string;
 }): Promise<CreateOrgResult> {
   return request("/api/orgs", { method: "POST", body: JSON.stringify(input) });
 }
@@ -381,4 +390,18 @@ export function resetOrgUserPassword(orgId: string, userId: string, password: st
     method: "POST",
     body: JSON.stringify({ password }),
   });
+}
+
+// For the "setup link expired before the customer used it" case.
+export function resendInvite(orgId: string, userId: string): Promise<{ setupLink: string; setupLinkEmailed: boolean }> {
+  return request(`/api/orgs/${encodeURIComponent(orgId)}/users/${encodeURIComponent(userId)}/resend-invite`, {
+    method: "POST",
+  });
+}
+
+// Public — no session exists yet (that's the whole point). Consumed from
+// the standalone /setup-password page a freshly created org's admin lands
+// on via their invite link.
+export function setupPassword(token: string, password: string): Promise<void> {
+  return request("/api/auth/setup-password", { method: "POST", body: JSON.stringify({ token, password }) });
 }

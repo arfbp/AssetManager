@@ -10,6 +10,7 @@ import {
   downloadOrgInstaller,
   getOrgUsers,
   resetOrgUserPassword,
+  resendInvite,
   type OrganizationSummary,
   type CreateOrgResult,
 } from "@/lib/api";
@@ -46,7 +47,7 @@ function CreateOrgModal({ onClose, onCreated }: CreateOrgModalProps) {
   const [adminFirstName, setAdminFirstName] = useState("");
   const [adminLastName, setAdminLastName] = useState("");
   const [adminUsername, setAdminUsername] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,9 +62,9 @@ function CreateOrgModal({ onClose, onCreated }: CreateOrgModalProps) {
         name: name.trim(),
         subdomain: effectiveSubdomain,
         adminUsername: adminUsername.trim(),
-        adminPassword,
         adminFirstName: adminFirstName.trim(),
         adminLastName: adminLastName.trim(),
+        adminEmail: adminEmail.trim() || undefined,
       });
       onCreated(result);
     } catch (err) {
@@ -73,8 +74,7 @@ function CreateOrgModal({ onClose, onCreated }: CreateOrgModalProps) {
     }
   }
 
-  const canSubmit =
-    name.trim() && effectiveSubdomain && adminUsername.trim() && adminPassword.length >= 8 && adminFirstName.trim() && adminLastName.trim();
+  const canSubmit = name.trim() && effectiveSubdomain && adminUsername.trim() && adminFirstName.trim() && adminLastName.trim();
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -82,7 +82,8 @@ function CreateOrgModal({ onClose, onCreated }: CreateOrgModalProps) {
       <form onSubmit={handleSubmit} className="relative z-10 w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
         <h2 className="text-base font-semibold text-ink-primary">Create organization</h2>
         <p className="mt-1 text-xs text-ink-muted">
-          Generates a fresh, isolated agent auth token + HMAC secret and creates this org's first admin account.
+          Generates a fresh, isolated agent auth token + HMAC secret and creates this org's first admin account. The admin sets their own
+          password via a one-time setup link — nobody else ever knows it.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -146,12 +147,13 @@ function CreateOrgModal({ onClose, onCreated }: CreateOrgModalProps) {
               />
             </label>
             <label className="mt-2 block text-xs text-ink-secondary">
-              Password (min. 8 characters)
+              Email (optional — sends the setup link automatically if SMTP is configured)
               <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
                 disabled={busy}
+                placeholder="admin@customer.com"
                 className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
               />
             </label>
@@ -213,6 +215,26 @@ function CredentialsModal({ result, onClose }: { result: CreateOrgResult; onClos
               {result.admin.username} @ {result.org.subdomain}
             </p>
           </div>
+          {result.setupLink && (
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  {result.setupLinkEmailed ? "Setup link (also emailed to the admin)" : "Setup link — send this to the admin"}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => copy(result.setupLink!, "link")}
+                  className="text-[11px] font-medium text-accent hover:underline"
+                >
+                  {copied === "link" ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p className="mt-1 overflow-x-auto rounded-md border border-border bg-page px-3 py-2 font-mono text-[11px] text-ink-primary">
+                {result.setupLink}
+              </p>
+              <p className="mt-1 text-[11px] text-ink-muted">Expires in 7 days. The admin sets their own password when they open it.</p>
+            </div>
+          )}
           <div>
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Agent credentials (install.ps1 env block)</label>
@@ -320,11 +342,28 @@ function ManageUsersModal({ org, onClose }: ManageUsersModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [resetTarget, setResetTarget] = useState<UserSummary | null>(null);
   const [justReset, setJustReset] = useState<string | null>(null);
+  const [resendBusy, setResendBusy] = useState<string | null>(null);
+  const [resendResult, setResendResult] = useState<{ username: string; link: string; emailed: boolean } | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function reload(): void {
     getOrgUsers(org.id)
       .then((res) => setUsers(res.users))
       .catch((err) => setLoadError(errorMessage(err, "Couldn't load this org's users.")));
+  }
+
+  async function handleResendInvite(user: UserSummary): Promise<void> {
+    setResendBusy(user.id);
+    setResendError(null);
+    try {
+      const res = await resendInvite(org.id, user.id);
+      setResendResult({ username: user.username, link: res.setupLink, emailed: res.setupLinkEmailed });
+    } catch (err) {
+      setResendError(errorMessage(err, "Failed to resend setup link."));
+    } finally {
+      setResendBusy(null);
+    }
   }
 
   useEffect(() => {
@@ -341,6 +380,30 @@ function ManageUsersModal({ org, onClose }: ManageUsersModalProps) {
 
         {justReset && <p className="mt-3 text-sm text-status-good">Password reset for {justReset}.</p>}
         {loadError && <p className="mt-3 text-sm text-status-critical">{loadError}</p>}
+        {resendError && <p className="mt-3 text-sm text-status-critical">{resendError}</p>}
+
+        {resendResult && (
+          <div className="mt-3 rounded-md border border-border bg-page p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-ink-primary">
+                {resendResult.emailed ? `Setup link resent to ${resendResult.username} (also emailed)` : `Setup link for ${resendResult.username}`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(resendResult.link).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+                className="text-[11px] font-medium text-accent hover:underline"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <p className="mt-1 overflow-x-auto font-mono text-[11px] text-ink-secondary">{resendResult.link}</p>
+          </div>
+        )}
 
         <div className="mt-4 divide-y divide-gridline rounded-lg border border-border">
           {users === null ? (
@@ -354,13 +417,23 @@ function ManageUsersModal({ org, onClose }: ManageUsersModalProps) {
                   <p className="text-sm font-medium text-ink-primary">{u.username}</p>
                   <p className="text-xs text-ink-muted">{u.role}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setResetTarget(u)}
-                  className="rounded-md border border-border px-2.5 py-1 text-xs text-ink-secondary hover:bg-gridline/40"
-                >
-                  Reset password
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleResendInvite(u)}
+                    disabled={resendBusy === u.id}
+                    className="rounded-md border border-border px-2.5 py-1 text-xs text-ink-secondary hover:bg-gridline/40 disabled:opacity-50"
+                  >
+                    {resendBusy === u.id ? "Sending…" : "Resend setup link"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResetTarget(u)}
+                    className="rounded-md border border-border px-2.5 py-1 text-xs text-ink-secondary hover:bg-gridline/40"
+                  >
+                    Reset password
+                  </button>
+                </div>
               </div>
             ))
           )}
