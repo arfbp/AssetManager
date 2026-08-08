@@ -315,6 +315,16 @@ export function getOrganizations(): Promise<{ orgs: OrganizationSummary[] }> {
   return request("/api/orgs");
 }
 
+// domain: null clears it, reverting the org to the shared subdomain-under-
+// orgDomainSuffix pattern every other org uses (see server/src/api/routes.ts's
+// POST /orgs/:id/custom-domain and migrations/0007_org_custom_domain.sql).
+export function setCustomDomain(orgId: string, domain: string | null): Promise<{ org: OrganizationSummary }> {
+  return request(`/api/orgs/${encodeURIComponent(orgId)}/custom-domain`, {
+    method: "POST",
+    body: JSON.stringify({ customDomain: domain }),
+  });
+}
+
 export interface CreateOrgResult {
   org: OrganizationSummary;
   // Shown as raw text in the dashboard only right here, at creation — not

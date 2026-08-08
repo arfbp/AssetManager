@@ -11,6 +11,7 @@ import {
   getOrgUsers,
   resetOrgUserPassword,
   resendInvite,
+  setCustomDomain,
   type OrganizationSummary,
   type CreateOrgResult,
 } from "@/lib/api";
@@ -266,6 +267,100 @@ function CredentialsModal({ result, onClose }: { result: CreateOrgResult; onClos
   );
 }
 
+interface CustomDomainModalProps {
+  org: OrganizationSummary;
+  onClose: () => void;
+  onDone: (org: OrganizationSummary) => void;
+}
+
+// Lets an org be reached at its own fully-owned domain (e.g.
+// assets.360qm.co.th) instead of the shared subdomain-under-orgDomainSuffix
+// pattern — this only registers the domain at the app layer (login
+// resolution + CORS, see server/src/api/routes.ts's POST
+// /orgs/:id/custom-domain). DNS still has to be pointed at this deployment
+// by the customer, and a TLS certificate covering the domain still has to
+// exist — see scripts/add-custom-domain.sh on the VPS for that half.
+function CustomDomainModal({ org, onClose, onDone }: CustomDomainModalProps) {
+  const [domain, setDomain] = useState(org.customDomain ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await setCustomDomain(org.id, domain.trim() || null);
+      onDone(res.org);
+    } catch (err) {
+      setError(errorMessage(err, "Failed to update custom domain."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleClear(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await setCustomDomain(org.id, null);
+      onDone(res.org);
+    } catch (err) {
+      setError(errorMessage(err, "Failed to clear custom domain."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <button type="button" aria-label="Dismiss" onClick={onClose} className="absolute inset-0 bg-black/40" />
+      <form onSubmit={handleSave} className="relative z-10 w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
+        <h2 className="text-base font-semibold text-ink-primary">Custom domain — {org.name}</h2>
+        <p className="mt-1 text-xs text-ink-muted">
+          Registers the domain for login/CORS. Two things still have to happen outside this dashboard before it actually works: the
+          customer points DNS at this server, and a TLS certificate has to cover the domain — run{" "}
+          <code className="text-ink-secondary">scripts/add-custom-domain.sh {domain.trim() || "<domain>"}</code> on the VPS once DNS
+          is pointed correctly.
+        </p>
+        <label className="mt-4 block text-xs text-ink-secondary">
+          Domain
+          <input
+            autoFocus
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            disabled={busy}
+            placeholder="assets.customer.com"
+            className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+          />
+        </label>
+        {error && <p className="mt-3 text-xs text-status-critical">{error}</p>}
+        <div className="mt-5 flex items-center justify-between">
+          {org.customDomain ? (
+            <button type="button" onClick={handleClear} disabled={busy} className="text-xs text-status-critical hover:underline disabled:opacity-50">
+              Remove custom domain
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} disabled={busy} className="rounded-md border border-border px-4 py-2 text-sm text-ink-secondary hover:bg-gridline/40">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={busy || !domain.trim()}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 interface ResetOrgPasswordModalProps {
   org: OrganizationSummary;
   user: UserSummary;
@@ -468,6 +563,7 @@ function Organizations({ username }: { username: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [justCreated, setJustCreated] = useState<CreateOrgResult | null>(null);
   const [manageUsersOrg, setManageUsersOrg] = useState<OrganizationSummary | null>(null);
+  const [domainOrg, setDomainOrg] = useState<OrganizationSummary | null>(null);
 
   function reload(): void {
     getOrganizations()
@@ -533,7 +629,10 @@ function Organizations({ username }: { username: string }) {
                 {orgs.map((org) => (
                   <tr key={org.id}>
                     <td className="p-4 text-sm font-bold text-ink-primary">{org.name}</td>
-                    <td className="p-4 font-mono text-xs text-ink-secondary">{org.subdomain}</td>
+                    <td className="p-4">
+                      <p className="font-mono text-xs text-ink-secondary">{org.subdomain}</p>
+                      {org.customDomain && <p className="mt-0.5 font-mono text-[11px] text-accent">{org.customDomain}</p>}
+                    </td>
                     <td className="p-4">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -553,6 +652,14 @@ function Organizations({ username }: { username: string }) {
                         >
                           <span className="material-symbols-outlined text-[16px]">group</span>
                           Users
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDomainOrg(org)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink-secondary hover:bg-gridline/40"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">language</span>
+                          Domain
                         </button>
                         <button
                           type="button"
@@ -586,6 +693,17 @@ function Organizations({ username }: { username: string }) {
       {justCreated && <CredentialsModal result={justCreated} onClose={() => setJustCreated(null)} />}
 
       {manageUsersOrg && <ManageUsersModal org={manageUsersOrg} onClose={() => setManageUsersOrg(null)} />}
+
+      {domainOrg && (
+        <CustomDomainModal
+          org={domainOrg}
+          onClose={() => setDomainOrg(null)}
+          onDone={() => {
+            setDomainOrg(null);
+            reload();
+          }}
+        />
+      )}
     </AppShell>
   );
 }
