@@ -1,0 +1,76 @@
+# Desired agent.yaml for the fleet - GLOBAL deployment (dist-agent-deploy-global/).
+# Whatever's in THIS file is authoritative for every already-installed agent,
+# the same convergence model self-update uses for the binary itself (see
+# agentBuild.ts / registry.ts's needsUpdate doc comment) - edit this file,
+# restart optifleet-server, and every connected agent converges to match on
+# its next heartbeat. See agentConfig.ts for how it's loaded and diffed.
+#
+# ca_cert_path trusts optifleet-cert.pem shipped alongside agent.yaml in every
+# global-deploy install - a self-signed certificate for the VPS IP (not a
+# real CA-issued certificate; see dist-agent-deploy-global/README.txt). Every
+# install via install.ps1 uses the identical C:\ProgramData\OptiFleetAgent
+# path, so this one file is valid for the whole fleet, not just one machine.
+
+service:
+  name: OptiFleetAIAgent
+  display_name: "OptiFleet AI Agent"
+  description: "OptiFleet AI fleet telemetry & management agent"
+
+server:
+  url: "wss://27.254.142.51:8443/"
+  client_cert_path: ""
+  client_key_path: ""
+  ca_cert_path: "C:\\ProgramData\\OptiFleetAgent\\optifleet-cert.pem"
+  hmac_secret_env: "OPTIFLEET_HMAC_SECRET"
+
+polling:
+  normal_interval: 5m
+  alert_interval: 10s
+  cpu_alert_threshold: 85.0
+  mem_alert_threshold: 85.0
+  recovery_streak: 3
+  top_n_processes: 0 # 0 = report every running process, no cap
+
+logging:
+  dir: "C:\\ProgramData\\OptiFleetAgent\\logs"
+  level: "info"
+  max_size_mb: 10
+  max_backups: 5
+  max_age_days: 30
+
+commands:
+  # run_script enabled fleet-wide via config-push, deliberately - needed so
+  # the dashboard/admin can dispatch an explicit, non-NL software-install
+  # script (e.g. a Ninite silent install) to a chosen device. Still gated by
+  # OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH server-side and by the
+  # OPTIFLEET_ENABLE_RUN_SCRIPT env var this same config-push sets on the
+  # service - see internal/configpush.
+  allowed:
+    - kill_process
+    - clean_temp
+    - restart_host
+    - shutdown_host
+    - network_diagnostic
+    - run_script
+  restart_confirm_delay: 30s
+  clean_temp_allowed_dirs:
+    - "%TEMP%"
+    - "C:\\Windows\\Temp"
+  script_timeout: 5m
+  max_script_bytes: 32768
+  # Bumped from 16384 for Uninstall Software's installed-programs scan — a
+  # machine with 150+ installed programs' name/version/publisher/uninstall
+  # strings as JSON can exceed 16KB comfortably.
+  max_script_output_bytes: 65536
+
+self_heal:
+  services:
+    watch: []
+    check_interval: 1m
+    max_restarts_per_hour: 5
+  disk_cleanup:
+    free_threshold_percent: 10
+    cooldown: 15m
+  memory_leak:
+    growth_threshold_mb: 500
+    min_samples: 5

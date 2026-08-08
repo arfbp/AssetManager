@@ -1,0 +1,7 @@
+{
+  "_comment": "Scope resolution for natural-language commands is entirely local config — the LLM never invents or enumerates device IDs. Copy to device-groups.json and edit. Keys are the 'scope' values callers can use (matched case-insensitively); values are exact agent_id strings, which are the hostnames agents report in their heartbeat (see internal/config's os.Hostname() usage on the agent).",
+
+  "admin-01": ["ADMIN-01"],
+  "accounting-group": ["ACC-PC-01", "ACC-PC-02", "ACC-PC-03"],
+  "all": ["ADMIN-01", "ACC-PC-01", "ACC-PC-02", "ACC-PC-03"]
+}

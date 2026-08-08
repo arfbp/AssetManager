@@ -1,0 +1,95 @@
+# OptiFleet AI Agent configuration
+# This file is deployed alongside the binary. Secrets (auth_token, client cert
+# passphrase) should come from environment variables or a secrets manager in
+# production, not committed to source control.
+
+service:
+  name: OptiFleetAIAgent
+  display_name: "OptiFleet AI Agent"
+  description: "OptiFleet AI fleet telemetry & management agent"
+
+server:
+  # wss:// only — plaintext ws:// is rejected at startup.
+  url: "wss://fleet.example.internal/agent/ws"
+  # Path to a client certificate for mTLS. Leave blank to fall back to
+  # bearer-token auth via OPTIFLEET_AUTH_TOKEN env var (less preferred).
+  client_cert_path: ""
+  client_key_path: ""
+  ca_cert_path: ""
+  # HMAC secret used to verify command authenticity server-side signatures.
+  # Populate via OPTIFLEET_HMAC_SECRET env var; placeholder left empty here.
+  hmac_secret_env: "OPTIFLEET_HMAC_SECRET"
+
+polling:
+  normal_interval: 5m
+  alert_interval: 10s
+  cpu_alert_threshold: 85.0
+  mem_alert_threshold: 85.0
+  # consecutive normal readings required before dropping back out of alert mode
+  recovery_streak: 3
+  # 0 = report every running process, no cap (higher payload/CPU cost on
+  # Collect() — see README's resource-target notes). Set a positive number
+  # to cap to the top N by CPU usage instead.
+  top_n_processes: 0
+
+logging:
+  dir: "./logs"
+  level: "info" # debug | info | warn | error
+  max_size_mb: 10
+  max_backups: 5
+  max_age_days: 30
+
+commands:
+  # Explicit allowlist — anything not listed here is rejected regardless of
+  # what the server sends.
+  #
+  # "run_script" is deliberately NOT enabled here. It executes
+  # server-supplied script content verbatim as SYSTEM/root with no
+  # interactive window — the highest-risk capability this agent has. If you
+  # add it to this list, the agent will still refuse to start unless
+  # OPTIFLEET_ENABLE_RUN_SCRIPT=true is also set in the environment (a
+  # deliberate second gate — see internal/executor.runScript's doc comment
+  # and the README's Self-Healing Engine section before enabling this).
+  allowed:
+    - kill_process
+    - clean_temp
+    - restart_host
+    - shutdown_host
+    - network_diagnostic
+  restart_confirm_delay: 30s
+  clean_temp_allowed_dirs:
+    - "%TEMP%"
+    - "C:\\Windows\\Temp"
+  # Bounds for run_script, if enabled — cannot be overridden per-command.
+  script_timeout: 5m
+  max_script_bytes: 32768
+  max_script_output_bytes: 16384
+
+self_heal:
+  # Auto-restart: services this agent watches and restarts if found stopped.
+  # This list is fixed here, not remotely expandable — add the exact service
+  # names as they appear in `sc query` (Windows), `systemctl list-units`
+  # (Linux), or `launchctl list` (macOS).
+  services:
+    watch:
+      - "Spooler"        # Windows Print Spooler, example
+      # - "postgresql-x64-16"
+      # - "OpenVPNService"
+    check_interval: 1m
+    max_restarts_per_hour: 5   # crash-loop guard; beyond this, stop touching it and just alert
+
+  # Auto-cleanup: triggers when any disk's free space drops below this
+  # percentage. Reuses commands.clean_temp_allowed_dirs as the directory
+  # allowlist — auto-cleanup never touches anything outside it.
+  disk_cleanup:
+    free_threshold_percent: 10
+    cooldown: 15m
+
+  # Memory-leak detection: flags a top-N process whose RSS has grown
+  # monotonically by at least growth_threshold_mb across min_samples
+  # consecutive telemetry snapshots. On flag: attempts a working-set trim
+  # (Windows only) and sends an "alert" to the server — it never
+  # auto-kills or auto-restarts the process itself.
+  memory_leak:
+    growth_threshold_mb: 500
+    min_samples: 5

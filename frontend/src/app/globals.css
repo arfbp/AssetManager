@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens — a navy/blue Material Design 3-style palette (adopted from
+ * a reference mockup the user asked to match visually), applied as VALUES
+ * under the project's existing token NAMES rather than introducing a
+ * parallel M3 token set — every component already references --accent,
+ * --surface-1, --text-primary etc., so this reskins the whole app by
+ * changing what those mean, not by renaming things everywhere.
+ * Status colors stay fixed — never themed per-series — but their exact
+ * hues were nudged to sit in this palette's family (teal-green/red) since
+ * matching the reference *is* the themeing decision here.
+ *
+ * Both light and dark are declared under the media query (OS preference)
+ * and the [data-theme] scope (the in-app toggle, src/components/theme) so
+ * an explicit user choice always wins over the OS setting in both
+ * directions.
+ */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcff;
+  --surface-page: #f8f9ff;
+  --text-primary: #0b1c30;
+  --text-secondary: #43474d;
+  --text-muted: #74777e;
+  --gridline: #e5eeff;
+  --border: rgba(11, 28, 48, 0.12);
+  --accent: #1d4ed8;
+  --accent-hover: #1741ab;
+
+  --status-good: #009e6d;
+  --status-warning: #c98500;
+  --status-serious: #ec835a;
+  --status-critical: #ba1a1a;
+  --status-offline: #74777e;
+
+  /* Categorical series slots for the history trend chart — fixed order,
+     never cycled/reassigned per filter (see dataviz skill's color-formula.md). */
+  --series-1: #1d4ed8; /* blue */
+  --series-2: #eb6834; /* orange */
+  --series-3: #009e6d; /* teal-green */
+  --series-4: #c98500; /* amber */
+  --series-5: #e87ba4; /* magenta */
+  --series-6: #4a3aa7; /* violet */
+  --series-7: #199e70; /* green */
+  --series-8: #ba1a1a; /* red */
+
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: #e2e8f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #111a28;
+    --surface-page: #0a121e;
+    --text-primary: #eaf1ff;
+    --text-secondary: #b7c4dd;
+    --text-muted: #7c8aa3;
+    --gridline: #1f2c40;
+    --border: rgba(234, 241, 255, 0.12);
+    --accent: #6ea8ff;
+    --accent-hover: #9dc4ff;
+
+    --status-good: #4edea3;
+    --status-warning: #eda100;
+    --status-serious: #ec835a;
+    --status-critical: #ff6f6f;
+    --status-offline: #7c8aa3;
+
+    --series-1: #6ea8ff;
+    --series-2: #d95926;
+    --series-3: #4edea3;
+    --series-4: #eda100;
+    --series-5: #d55181;
+    --series-6: #9085e9;
+    --series-7: #199e70;
+    --series-8: #ff6f6f;
+
+    --glass-bg: rgba(17, 26, 40, 0.85);
+    --glass-border: rgba(234, 241, 255, 0.1);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #111a28;
+  --surface-page: #0a121e;
+  --text-primary: #eaf1ff;
+  --text-secondary: #b7c4dd;
+  --text-muted: #7c8aa3;
+  --gridline: #1f2c40;
+  --border: rgba(234, 241, 255, 0.12);
+  --accent: #6ea8ff;
+  --accent-hover: #9dc4ff;
+
+  --status-good: #4edea3;
+  --status-warning: #eda100;
+  --status-serious: #ec835a;
+  --status-critical: #ff6f6f;
+  --status-offline: #7c8aa3;
+
+  --series-1: #6ea8ff;
+  --series-2: #d95926;
+  --series-3: #4edea3;
+  --series-4: #eda100;
+  --series-5: #d55181;
+  --series-6: #9085e9;
+  --series-7: #199e70;
+  --series-8: #ff6f6f;
+
+  --glass-bg: rgba(17, 26, 40, 0.85);
+  --glass-border: rgba(234, 241, 255, 0.1);
+}
+
+/*
+ * The admin sidebar is a deliberate single-theme element: it stays dark
+ * regardless of the light/dark toggle applied to the rest of the app (the
+ * same pattern Snipe-IT and most admin panels use) — a fixed dark "frame"
+ * around content that itself still fully supports both themes. Not derived
+ * from the light/dark token pairs above on purpose. Colors match the
+ * reference mockup's sidebar (a deep navy, "primary-container" in its own
+ * token dump) rather than the previous neutral charcoal.
+ */
+:root {
+  --sidebar-bg: #0a2540;
+  --sidebar-bg-active: #123457;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ink: #9fb4cc;
+  --sidebar-ink-active: #ffffff;
+  --sidebar-ink-muted: #5b7797;
+  --sidebar-accent: #6ea8ff;
+}
+
+body {
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+}
+
+.material-symbols-outlined {
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 24;
+  /* Icon font glyphs render at their own natural baseline, not text
+     baseline — inline-block + vertical-align keeps them from drifting
+     relative to adjacent label text (a generic Material Symbols quirk,
+     not specific to this app). */
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Reference mockup's "glass-card" treatment — translucent surface + blur +
+   a hairline border + a soft shadow. Opt-in via this class rather than
+   baked into --surface-1 itself, since plain surfaces (menus, inputs)
+   still want an opaque background. */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0px 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* Large standalone numbers (stat-tile values) use default proportional
+   figures; only table/column numbers get tabular-nums — see
+   marks-and-anatomy.md. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

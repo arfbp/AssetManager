@@ -1,0 +1,59 @@
+# OptiFleet AI Agent configuration - LAN test deployment.
+# Points at the central server running on 192.168.10.196 (this dev machine).
+# ca_cert_path trusts optifleet-cert.pem shipped alongside this file - that
+# cert is self-signed for LAN testing only, not a real CA-issued certificate.
+
+service:
+  name: OptiFleetAIAgent
+  display_name: "OptiFleet AI Agent"
+  description: "OptiFleet AI fleet telemetry & management agent"
+
+server:
+  url: "wss://192.168.10.196:8443/"
+  client_cert_path: ""
+  client_key_path: ""
+  ca_cert_path: "__INSTALL_DIR__\\optifleet-cert.pem"
+  hmac_secret_env: "OPTIFLEET_HMAC_SECRET"
+
+polling:
+  normal_interval: 5m
+  alert_interval: 10s
+  cpu_alert_threshold: 85.0
+  mem_alert_threshold: 85.0
+  recovery_streak: 3
+  top_n_processes: 0 # 0 = report every running process, no cap
+
+logging:
+  dir: "__INSTALL_DIR__\\logs"
+  level: "info"
+  max_size_mb: 10
+  max_backups: 5
+  max_age_days: 30
+
+commands:
+  # run_script intentionally NOT enabled - see server/README.md before adding it.
+  allowed:
+    - kill_process
+    - clean_temp
+    - restart_host
+    - shutdown_host
+    - network_diagnostic
+  restart_confirm_delay: 30s
+  clean_temp_allowed_dirs:
+    - "%TEMP%"
+    - "C:\\Windows\\Temp"
+  script_timeout: 5m
+  max_script_bytes: 32768
+  max_script_output_bytes: 16384
+
+self_heal:
+  services:
+    watch: []
+    check_interval: 1m
+    max_restarts_per_hour: 5
+  disk_cleanup:
+    free_threshold_percent: 10
+    cooldown: 15m
+  memory_leak:
+    growth_threshold_mb: 500
+    min_samples: 5

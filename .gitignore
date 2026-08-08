@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+bin/
+*.tsbuildinfo
+dist-agent-deploy/
+dist-agent-deploy-global/
+dist-agent-deploy-macos/
+dist-agent-singlefile/
+
+# Secrets — never commit real credentials
+.env
+.env.local
+.env.*.local
+server/.env
+frontend/.env.local
+server/test-cert.pem
+server/test-key.pem
+
+# Runtime artifacts
+*.log
+*.pid
+logs-local/
+service-stdout.log
+service-stderr.log
+
+# Generated agent installer packages / binaries (rebuilt from source, not
+# source themselves)
+*.zip
+OptiFleetAgent.exe
+scratch_playwright/*.png
+
+# Local scratch/test output
+/tmp/
+
+# Claude Code session/tool state — not project source
+.claude/
