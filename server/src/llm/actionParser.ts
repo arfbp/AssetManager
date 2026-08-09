@@ -13,6 +13,7 @@
 import OpenAI from "openai";
 import { log } from "../logger.js";
 import { EMIT_FLEET_COMMAND_TOOL, ParsedIntentSchema, type ParsedIntent } from "./schema.js";
+import { EMIT_ADMIN_COMMAND_TOOL, AdminParsedIntentSchema, type AdminParsedIntent } from "./adminSchema.js";
 
 // Groq's Chat Completions API is OpenAI-compatible, so the OpenAI SDK talks
 // to it directly by overriding baseURL — see server/README.md for why this
@@ -74,6 +75,13 @@ function parseRetryAfterSeconds(message: string): number | null {
 
 function buildSystemPrompt(knownScopes: string[], presetScope?: string): string {
   return [
+    "You translate an IT operator's natural-language request into a single structured command by calling exactly",
+    "one of the two tools available to you. Use emit_admin_command when the request is about an ORGANIZATION",
+    "(creating a new customer, suspending/reactivating/deleting one) or a USER ACCOUNT (creating/deleting/",
+    "suspending/reactivating a login), or about obtaining an agent installer — none of these target a specific",
+    "device. Use emit_fleet_command for everything else below, which is about acting on or asking about a",
+    "specific device or device group.",
+    "",
     "You translate an IT operator's natural-language request into a single structured fleet-management command.",
     "",
     "`scope` is WHERE the action runs: a device hostname or a device-group name — never anything else.",
@@ -154,18 +162,23 @@ function buildSystemPrompt(knownScopes: string[], presetScope?: string): string 
   ].join("\n");
 }
 
+export type ParsedCommand = { kind: "device"; parsed: ParsedIntent } | { kind: "admin"; parsed: AdminParsedIntent };
+
 export async function parseNaturalLanguageCommand(
   text: string,
   knownScopes: string[],
   presetScope?: string,
-): Promise<ParsedIntent> {
+): Promise<ParsedCommand> {
   let response: OpenAI.Chat.Completions.ChatCompletion;
   try {
     response = await client.chat.completions.create({
       model: MODEL,
       max_tokens: 1024,
-      tools: [EMIT_FLEET_COMMAND_TOOL],
-      tool_choice: { type: "function", function: { name: "emit_fleet_command" } },
+      tools: [EMIT_FLEET_COMMAND_TOOL, EMIT_ADMIN_COMMAND_TOOL],
+      // "required" (not a forced single tool) — the model picks whichever of
+      // the two registered tools matches the request, see buildSystemPrompt's
+      // routing note above.
+      tool_choice: "required",
       messages: [
         { role: "system", content: buildSystemPrompt(knownScopes, presetScope) },
         { role: "user", content: text },
@@ -192,18 +205,24 @@ export async function parseNaturalLanguageCommand(
 
   const toolCall = choice?.message.tool_calls?.find(
     (c): c is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
-      c.type === "function" && c.function.name === "emit_fleet_command",
+      c.type === "function" && (c.function.name === "emit_fleet_command" || c.function.name === "emit_admin_command"),
   );
   if (!toolCall) {
-    throw new Error(`llm: expected an emit_fleet_command tool call, got finish_reason=${choice?.finish_reason}`);
+    throw new Error(`llm: expected an emit_fleet_command or emit_admin_command tool call, got finish_reason=${choice?.finish_reason}`);
   }
 
   // Defense in depth: re-validate with zod rather than trusting the model's
   // JSON output blindly — the model can still return malformed/extra fields
   // regardless of what the schema requested.
   const rawArgs: unknown = JSON.parse(toolCall.function.arguments);
-  const parsed = ParsedIntentSchema.parse(rawArgs);
 
+  if (toolCall.function.name === "emit_admin_command") {
+    const parsed = AdminParsedIntentSchema.parse(rawArgs);
+    log.info({ parsed }, "llm: parsed natural-language admin command");
+    return { kind: "admin", parsed };
+  }
+
+  const parsed = ParsedIntentSchema.parse(rawArgs);
   log.info({ parsed }, "llm: parsed natural-language command");
-  return parsed;
+  return { kind: "device", parsed };
 }

@@ -22,9 +22,11 @@ import { suggestRemediation } from "../llm/remediationAdvisor.js";
 import { analyzeDeviceForReplacement } from "../llm/deviceAnalysis.js";
 import { answerDeviceQuery } from "../llm/queryAnswerer.js";
 import { evaluateParsedIntent } from "../security/guardrail.js";
+import { evaluateAdminIntent } from "../security/adminGuardrail.js";
+import { executeAdminAction } from "../admin/executeAdminAction.js";
 import { scanForBlacklistedContent } from "../security/blacklist.js";
 import { loginRateLimiter, createOrgRateLimiter } from "../security/rateLimiter.js";
-import { PendingActionStore } from "./pendingActions.js";
+import { PendingActionStore, type PendingAction, type PendingAdminAction } from "./pendingActions.js";
 import { verifyCredentials, listUsers, createUser, updateUserRole, updateUserProfile, resetPassword, deleteUser, otherAdminCount, setUserStatus, DuplicateUsernameError } from "../auth/users.js";
 import { resolveOrgBySubdomain } from "../auth/orgResolver.js";
 import { createSetupToken, consumeSetupToken } from "../auth/passwordSetup.js";
@@ -234,7 +236,10 @@ export function buildRouter(
   orgCredentials: OrgCredentialCache,
 ): express.Router {
   const router = express.Router();
-  const pending = new PendingActionStore();
+  const pending = new PendingActionStore<PendingAction>();
+  // Separate store, never confirmable through the device store's IDs —
+  // see pendingActions.ts's doc comment and security/adminGuardrail.ts.
+  const pendingAdmin = new PendingActionStore<PendingAdminAction>();
 
   // Per-org limiters for routes that are expensive per-call (real $ cost,
   // or real CPU/disk/bandwidth work) — see security/rateLimiter.ts's doc
@@ -1178,9 +1183,9 @@ export function buildRouter(
       const body = CommandRequestSchema.parse(req.body);
       const requestedBy = req.user!.username;
 
-      let parsed;
+      let parsedCommand;
       try {
-        parsed = await parseNaturalLanguageCommand(body.text, deviceGroups.listScopes(req.user!.orgId), body.scope);
+        parsedCommand = await parseNaturalLanguageCommand(body.text, deviceGroups.listScopes(req.user!.orgId), body.scope);
       } catch (err) {
         if (err instanceof ParseRefusedError) {
           audit.warn({ requestedBy, text: body.text, category: err.category }, "command: LLM refused to parse request");
@@ -1204,6 +1209,74 @@ export function buildRouter(
         }
         throw err;
       }
+
+      // Organization/user administration — a completely separate pipeline
+      // from everything below (no device/scope/dispatch involved at all).
+      // See security/adminGuardrail.ts's own doc comment for the
+      // permission model and why creation actions never execute blind.
+      if (parsedCommand.kind === "admin") {
+        const isPlatformAdmin = req.user!.role === "admin" && req.user!.orgId === PLATFORM_ORG_ID;
+        const verdict = await evaluateAdminIntent(parsedCommand.parsed, {
+          role: req.user!.role,
+          orgId: req.user!.orgId,
+          isPlatformAdmin,
+          pool,
+        });
+
+        if (verdict.verdict === "blocked") {
+          res.status(422).json({ error: verdict.reason });
+          return;
+        }
+
+        if (verdict.verdict === "admin_form") {
+          res.status(200).json({
+            status: "admin_form",
+            formAction: verdict.formAction,
+            prefill: verdict.prefill,
+            reasoning: parsedCommand.parsed.reasoning,
+          });
+          return;
+        }
+
+        if (verdict.verdict === "needs_confirmation") {
+          const action = pendingAdmin.create({
+            resolved: verdict.resolved,
+            reason: verdict.reason,
+            requestedBy,
+            originalText: body.text,
+          });
+          res.status(202).json({
+            status: "needs_confirmation",
+            kind: "admin",
+            pendingId: action.id,
+            reason: verdict.reason,
+            resolved: verdict.resolved,
+            expiresInSeconds: 300,
+            reasoning: parsedCommand.parsed.reasoning,
+          });
+          return;
+        }
+
+        // verdict.verdict === "allowed" — only ever generate_installer
+        // (the one admin action with nothing destructive to confirm).
+        if (verdict.resolved.action === "generate_installer") {
+          const { orgId: installerOrgId, orgName, subdomain } = verdict.resolved;
+          res.status(200).json({
+            status: "admin_result",
+            resultAction: "generate_installer",
+            installerOrgId,
+            orgName,
+            subdomain,
+            ownOrg: installerOrgId === req.user!.orgId,
+            reasoning: parsedCommand.parsed.reasoning,
+          });
+          return;
+        }
+        res.status(500).json({ error: "unexpected admin verdict" });
+        return;
+      }
+
+      let parsed = parsedCommand.parsed;
 
       // The operator picked a specific device in the UI — that's a stronger
       // signal than anything the model extracted from free text, so it wins
@@ -1339,10 +1412,25 @@ export function buildRouter(
     }
   });
 
-  router.post("/command/:id/confirm", requireRole("admin", "it_support"), (req: AuthedRequest, res: Response, next: NextFunction) => {
+  router.post("/command/:id/confirm", requireRole("admin", "it_support"), async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
       const confirmedBy = req.user!.username;
       const pendingId = req.params.id ?? "";
+
+      // Tried first: admin pending IDs and device pending IDs are minted
+      // from two entirely separate PendingActionStore instances (see
+      // pendingActions.ts), so a real ID only ever exists in one of the two.
+      const adminAction = pendingAdmin.take(pendingId);
+      if (adminAction) {
+        audit.info(
+          { pendingId, originalRequestedBy: adminAction.requestedBy, confirmedBy, resolved: adminAction.resolved },
+          "command: human confirmed pending admin action, executing",
+        );
+        const message = await executeAdminAction(pool, adminAction.resolved, confirmedBy, orgCredentials);
+        res.status(200).json({ status: "admin_result", message });
+        return;
+      }
+
       const action = pending.take(pendingId);
       if (!action) {
         res.status(404).json({ error: "pending action not found — it may have expired (5 min TTL) or already been confirmed." });

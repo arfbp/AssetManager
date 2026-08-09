@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { ApiError, confirmCommand, submitCommand } from "@/lib/api";
+import { CreateOrgModal, type CreateOrgPrefill } from "@/components/orgs/CreateOrgModal";
+import { AddUserModal, type AddUserPrefill } from "@/components/users/AddUserModal";
+import { ApiError, confirmCommand, submitCommand, downloadOrgInstaller, downloadAgentInstaller } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 import type { AgentSummary, HistoryEntry, HistoryEntryStatus } from "@/lib/types";
 import type { StreamedCommandOutput } from "@/hooks/useDashboardSocket";
@@ -22,6 +24,11 @@ interface ChatMessage {
   // WebSocket, so the operator sees hops/replies appear one at a time
   // instead of waiting for the whole command to finish.
   streamTargets?: { commandId: string; agentId: string }[];
+  // Set only for a generate_installer admin_result — renders a "Download
+  // installer" button reusing the exact same routes the Downloads/
+  // Organizations pages already call, see api.ts's downloadAgentInstaller/
+  // downloadOrgInstaller.
+  installer?: { orgId: string; subdomain: string; ownOrg: boolean };
   // Who sent it and when — set only on entries reconstructed from durable
   // server-side history (see buildHistoryMessages), so past sessions still
   // show the same audit trail as command_history/"Recent activity". Not set
@@ -88,6 +95,19 @@ interface PendingConfirmation {
   resolved: { action: string; params: Record<string, string> };
 }
 
+// Admin confirmations (suspend/reactivate/delete an org or user) are a
+// separate concern from device confirmations above — different shape
+// (named org/user, not device targets), same POST /command/:id/confirm
+// endpoint either way (see server/src/api/routes.ts's dual pendingAdmin
+// store). delete_organization gets its own stricter type-the-name control
+// below instead of a plain yes/no, mirroring the Organizations page's own
+// DeleteOrgModal — this is the one truly irreversible admin action.
+interface PendingAdminConfirmation {
+  pendingId: string;
+  reason: string;
+  resolved: { action: string; orgName?: string; username?: string };
+}
+
 const TONE_CLASS: Record<NonNullable<ChatMessage["tone"]>, string> = {
   info: "text-ink-secondary",
   success: "text-status-good",
@@ -148,6 +168,10 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
   const [busy, setBusy] = useState(false);
   const [scope, setScope] = useState(defaultScope ?? "");
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
+  const [pendingAdmin, setPendingAdmin] = useState<PendingAdminConfirmation | null>(null);
+  const [deleteOrgConfirmText, setDeleteOrgConfirmText] = useState("");
+  const [createOrgPrefill, setCreateOrgPrefill] = useState<CreateOrgPrefill | null>(null);
+  const [addUserPrefill, setAddUserPrefill] = useState<AddUserPrefill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Follows the conversation as it grows — new turns from typing a command,
@@ -188,6 +212,18 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
             ? response.results.filter((r) => r.dispatched).map((r) => ({ commandId: r.commandId, agentId: r.agentId }))
             : undefined,
         });
+      } else if (response.status === "needs_confirmation" && "kind" in response) {
+        // Org/user administration — see security/adminGuardrail.ts. Named
+        // target instead of a device list, and delete_organization gets
+        // its own type-the-name control below instead of a plain confirm.
+        append({
+          role: "system",
+          tone: "pending",
+          text: `This needs confirmation before it runs: ${response.reason}`,
+          reasoning: response.reasoning,
+        });
+        setDeleteOrgConfirmText("");
+        setPendingAdmin({ pendingId: response.pendingId, reason: response.reason, resolved: response.resolved });
       } else if (response.status === "needs_confirmation") {
         append({
           role: "system",
@@ -201,6 +237,38 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
           reason: response.reason,
           resolved: response.resolved,
         });
+      } else if (response.status === "admin_form") {
+        // Nothing has been created yet — this opens the exact same,
+        // already-validated modal a human uses by clicking "Create
+        // organization"/"Add user", just pre-filled with what the request
+        // extracted. The operator reviews/edits/submits normally.
+        append({
+          role: "system",
+          tone: "info",
+          text:
+            response.formAction === "create_organization"
+              ? "Opening the create-organization form with what I could extract — review and submit when ready."
+              : "Opening the add-user form with what I could extract — review, set a password, and submit when ready.",
+          reasoning: response.reasoning,
+        });
+        if (response.formAction === "create_organization") setCreateOrgPrefill(response.prefill);
+        else setAddUserPrefill(response.prefill);
+      } else if (response.status === "admin_result" && "resultAction" in response) {
+        // generate_installer — nothing to confirm, just hand back a
+        // download button reusing the exact same installer routes the
+        // Downloads/Organizations pages already use.
+        append({
+          role: "system",
+          tone: "success",
+          text: `Installer ready for "${response.orgName}".`,
+          reasoning: response.reasoning,
+          installer: { orgId: response.installerOrgId, subdomain: response.subdomain, ownOrg: response.ownOrg },
+        });
+      } else if (response.status === "admin_result") {
+        // Only reachable in practice via confirmCommand, not here — kept
+        // for type exhaustiveness against the shared CommandApiResponse
+        // union (see lib/types.ts).
+        append({ role: "system", tone: "success", text: response.message });
       } else {
         // "answered" — a read-only question (or a request that didn't map
         // to a specific action at all, see `fallback`); nothing was
@@ -246,6 +314,28 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
 
   function handleCancel(): void {
     setPending(null);
+    append({ role: "system", tone: "info", text: "Cancelled — nothing was sent." });
+  }
+
+  async function handleConfirmAdmin(): Promise<void> {
+    if (!pendingAdmin || busy) return;
+    setBusy(true);
+    try {
+      const response = await confirmCommand(pendingAdmin.pendingId);
+      if (response.status === "admin_result" && "message" in response) {
+        append({ role: "system", tone: "success", text: response.message });
+      }
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Unexpected error confirming the command.";
+      append({ role: "system", tone: "error", text: message });
+    } finally {
+      setPendingAdmin(null);
+      setBusy(false);
+    }
+  }
+
+  function handleCancelAdmin(): void {
+    setPendingAdmin(null);
     append({ role: "system", tone: "info", text: "Cancelled — nothing was sent." });
   }
 
@@ -314,6 +404,18 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
                   })}
                 </div>
               )}
+              {msg.installer && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    msg.installer!.ownOrg ? downloadAgentInstaller() : downloadOrgInstaller(msg.installer!.orgId, msg.installer!.subdomain)
+                  }
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Download installer
+                </button>
+              )}
             </div>
             {msg.meta && <p className="mt-0.5 px-1 text-[11px] text-ink-muted">{msg.meta}</p>}
           </div>
@@ -348,6 +450,76 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+
+      {/* Same yes/no confirmation as the device dialog above, for every
+          admin action except delete_organization — that one gets a
+          stricter type-the-name control below, mirroring the Organizations
+          page's own DeleteOrgModal (the one truly irreversible action). */}
+      <ConfirmDialog
+        open={pendingAdmin !== null && pendingAdmin.resolved.action !== "delete_organization"}
+        title="Confirm this action?"
+        message={pendingAdmin ? pendingAdmin.reason : ""}
+        confirmLabel="Confirm"
+        tone="warning"
+        busy={busy}
+        onConfirm={handleConfirmAdmin}
+        onCancel={handleCancelAdmin}
+      />
+
+      {pendingAdmin && pendingAdmin.resolved.action === "delete_organization" && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          <button type="button" aria-label="Dismiss" onClick={handleCancelAdmin} className="absolute inset-0 bg-black/40" />
+          <div className="relative z-10 w-full max-w-sm rounded-xl border border-status-critical/30 bg-surface p-6 shadow-2xl">
+            <h2 className="text-base font-semibold text-status-critical">Delete "{pendingAdmin.resolved.orgName}"</h2>
+            <p className="mt-2 text-xs text-ink-secondary">{pendingAdmin.reason}</p>
+            <label className="mt-4 block text-xs text-ink-secondary">
+              Type <span className="font-mono font-semibold text-ink-primary">{pendingAdmin.resolved.orgName}</span> to confirm
+              <input
+                autoFocus
+                value={deleteOrgConfirmText}
+                onChange={(e) => setDeleteOrgConfirmText(e.target.value)}
+                disabled={busy}
+                className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-status-critical disabled:opacity-50"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={handleCancelAdmin} disabled={busy} className="rounded-md border border-border px-4 py-2 text-sm text-ink-secondary hover:bg-gridline/40">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAdmin}
+                disabled={busy || deleteOrgConfirmText !== pendingAdmin.resolved.orgName}
+                className="rounded-md bg-status-critical px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {busy ? "Deleting…" : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createOrgPrefill && (
+        <CreateOrgModal
+          prefill={createOrgPrefill}
+          onClose={() => setCreateOrgPrefill(null)}
+          onCreated={() => {
+            setCreateOrgPrefill(null);
+            append({ role: "system", tone: "success", text: "Organization created." });
+          }}
+        />
+      )}
+
+      {addUserPrefill && (
+        <AddUserModal
+          prefill={addUserPrefill}
+          onClose={() => setAddUserPrefill(null)}
+          onCreated={() => {
+            setAddUserPrefill(null);
+            append({ role: "system", tone: "success", text: "User created." });
+          }}
+        />
+      )}
     </div>
   );
 }

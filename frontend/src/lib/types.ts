@@ -153,7 +153,37 @@ export type CommandApiResponse =
   // fallback=true means the request didn't map to a specific supported
   // action at all; this is the server falling back to "here's the
   // device's actual current state" instead of a dead-end rejection.
-  | { status: "answered"; agentId: string; answerable: boolean; answer: string; reasoning?: string; fallback?: boolean };
+  | { status: "answered"; agentId: string; answerable: boolean; answer: string; reasoning?: string; fallback?: boolean }
+  // Organization/user administration responses — see
+  // server/src/security/adminGuardrail.ts. "admin_form" means nothing
+  // happened yet: the caller opens the named dashboard modal pre-filled
+  // with `prefill` and the operator completes/submits it normally.
+  | { status: "admin_form"; formAction: "create_organization" | "create_user"; prefill: Record<string, string>; reasoning?: string }
+  // kind: "admin" distinguishes this from the device needs_confirmation
+  // variant above (which always has `targets` instead) — confirming posts
+  // to the same POST /command/:id/confirm endpoint either way.
+  | {
+      status: "needs_confirmation";
+      kind: "admin";
+      pendingId: string;
+      reason: string;
+      resolved: { action: string; orgName?: string; username?: string };
+      expiresInSeconds: number;
+      reasoning?: string;
+    }
+  // Immediate (no confirmation) response to generate_installer.
+  | {
+      status: "admin_result";
+      resultAction: "generate_installer";
+      installerOrgId: string;
+      orgName: string;
+      subdomain: string;
+      ownOrg: boolean;
+      reasoning?: string;
+    }
+  // POST /command/:id/confirm's result for a confirmed admin action
+  // (suspend/reactivate/delete on an org or user).
+  | { status: "admin_result"; message: string };
 
 export interface ApiErrorBody {
   error: string;
