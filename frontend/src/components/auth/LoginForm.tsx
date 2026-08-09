@@ -38,7 +38,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(60% 50% at 50% 0%, rgba(6,182,242,0.16), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(29,78,216,0.18), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(6,182,242,0.16), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(25,87,194,0.18), transparent 70%)",
         }}
       />
       <div
@@ -57,11 +57,11 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
         className="relative z-10 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-black/50 backdrop-blur-xl"
       >
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1d4ed8]/30 to-[#06b6f2]/20 shadow-[0_0_24px_rgba(6,182,242,0.25)]">
-            <img src="/bilibili-icon.svg" alt="bilibili" className="h-7 w-auto" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1957c2]/30 to-[#06b6f2]/20 shadow-[0_0_24px_rgba(6,182,242,0.25)]">
+            <img src="/optifleet-mark.svg" alt="OptiFleet AI" className="h-7 w-auto" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight text-white">OptiFleet AI</h1>
+            <h1 className="font-display text-lg font-bold text-white">OptiFleet AI</h1>
             <p className="mt-0.5 text-xs text-white/50">AI-powered device fleet console</p>
           </div>
         </div>
@@ -80,7 +80,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={busy}
-                  className="w-full rounded-lg border border-white/10 bg-black/25 py-2.5 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#6ea8ff]/50 focus:ring-2 focus:ring-[#6ea8ff]/30 disabled:opacity-50"
+                  className="w-full rounded-lg border border-white/10 bg-black/25 py-2.5 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#5b9dff]/50 focus:ring-2 focus:ring-[#5b9dff]/30 disabled:opacity-50"
                 />
               </div>
             </label>
@@ -96,7 +96,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={busy}
-                  className="w-full rounded-lg border border-white/10 bg-black/25 py-2.5 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#6ea8ff]/50 focus:ring-2 focus:ring-[#6ea8ff]/30 disabled:opacity-50"
+                  className="w-full rounded-lg border border-white/10 bg-black/25 py-2.5 pl-10 pr-3 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#5b9dff]/50 focus:ring-2 focus:ring-[#5b9dff]/30 disabled:opacity-50"
                 />
               </div>
             </label>
@@ -112,7 +112,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
           <button
             type="submit"
             disabled={busy || !username.trim() || !password}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1d4ed8] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1d4ed8]/20 transition-all hover:shadow-[#06b6f2]/30 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1957c2] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1957c2]/20 transition-all hover:shadow-[#06b6f2]/30 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
           >
             {busy ? (
               "Signing in…"
@@ -131,8 +131,8 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
       </form>
 
       <img
-        src="/bilibili-logo.svg"
-        alt="bilibili"
+        src="/optifleet-wordmark.svg"
+        alt="OptiFleet AI"
         className="absolute bottom-6 left-1/2 z-10 h-4 w-auto -translate-x-1/2 opacity-60"
       />
     </div>

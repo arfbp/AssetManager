@@ -38,7 +38,7 @@ function SetupPasswordForm() {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(60% 50% at 50% 0%, rgba(6,182,242,0.16), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(29,78,216,0.18), transparent 70%)",
+            "radial-gradient(60% 50% at 50% 0%, rgba(6,182,242,0.16), transparent 70%), radial-gradient(40% 40% at 85% 90%, rgba(25,87,194,0.18), transparent 70%)",
         }}
       />
       <div
@@ -54,7 +54,7 @@ function SetupPasswordForm() {
 
       <div className="relative z-10 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl shadow-black/50 backdrop-blur-xl">
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1d4ed8]/30 to-[#06b6f2]/20 shadow-[0_0_24px_rgba(6,182,242,0.25)]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1957c2]/30 to-[#06b6f2]/20 shadow-[0_0_24px_rgba(6,182,242,0.25)]">
             <span className="material-symbols-outlined text-[26px] text-white">lock_open</span>
           </div>
           <div>
@@ -74,7 +74,7 @@ function SetupPasswordForm() {
                 <span className="material-symbols-outlined text-[16px]">check_circle</span>
                 Password set. You can sign in now.
               </p>
-              <a href="/" className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#1d4ed8] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1d4ed8]/20 transition-all hover:shadow-[#06b6f2]/30">
+              <a href="/" className="mt-4 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#1957c2] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1957c2]/20 transition-all hover:shadow-[#06b6f2]/30">
                 Go to sign in
                 <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
               </a>
@@ -90,7 +90,7 @@ function SetupPasswordForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={busy}
-                  className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#6ea8ff]/50 focus:ring-2 focus:ring-[#6ea8ff]/30 disabled:opacity-50"
+                  className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#5b9dff]/50 focus:ring-2 focus:ring-[#5b9dff]/30 disabled:opacity-50"
                 />
               </label>
               <label className="block text-xs font-medium text-white/60">
@@ -101,7 +101,7 @@ function SetupPasswordForm() {
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   disabled={busy}
-                  className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#6ea8ff]/50 focus:ring-2 focus:ring-[#6ea8ff]/30 disabled:opacity-50"
+                  className="mt-1.5 w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-[#5b9dff]/50 focus:ring-2 focus:ring-[#5b9dff]/30 disabled:opacity-50"
                 />
               </label>
 
@@ -118,7 +118,7 @@ function SetupPasswordForm() {
               <button
                 type="submit"
                 disabled={busy || password.length < 8 || password !== confirm}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1d4ed8] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1d4ed8]/20 transition-all hover:shadow-[#06b6f2]/30 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1957c2] to-[#0891b2] px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-[#1957c2]/20 transition-all hover:shadow-[#06b6f2]/30 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
               >
                 {busy ? "Setting password…" : "Set password"}
               </button>

@@ -27,8 +27,8 @@
   --text-muted: #74777e;
   --gridline: #e5eeff;
   --border: rgba(11, 28, 48, 0.12);
-  --accent: #1d4ed8;
-  --accent-hover: #1741ab;
+  --accent: #1957c2;
+  --accent-hover: #123f92;
 
   --status-good: #009e6d;
   --status-warning: #c98500;
@@ -61,8 +61,8 @@
     --text-muted: #7c8aa3;
     --gridline: #1f2c40;
     --border: rgba(234, 241, 255, 0.12);
-    --accent: #6ea8ff;
-    --accent-hover: #9dc4ff;
+    --accent: #5b9dff;
+    --accent-hover: #8bbcff;
 
     --status-good: #4edea3;
     --status-warning: #eda100;
@@ -131,7 +131,7 @@
   --sidebar-ink: #9fb4cc;
   --sidebar-ink-active: #ffffff;
   --sidebar-ink-muted: #5b7797;
-  --sidebar-accent: #6ea8ff;
+  --sidebar-accent: #5b9dff;
 }
 
 body {
@@ -171,4 +171,14 @@ body {
    marks-and-anatomy.md. */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Page headings, table headers, and data-heavy numeric displays (device
+   counts, IDs) — the "precision instrument" typographic accent, paired
+   with Inter for body copy rather than replacing it everywhere. See
+   layout.tsx's IBM Plex Mono <link> and tailwind.config.ts's
+   fontFamily.mono. */
+.font-display {
+  font-family: theme("fontFamily.mono");
+  letter-spacing: -0.01em;
 }

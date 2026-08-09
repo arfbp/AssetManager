@@ -33,6 +33,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
+        {/* Display/data face — page headings, table headers, and
+            data-heavy numeric displays (device counts, IDs) use this
+            instead of Inter; body copy/form labels stay on Inter. See
+            tailwind.config.ts's fontFamily.mono. */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&display=swap"
+          rel="stylesheet"
+        />
         {/* Material Symbols Outlined — the icon font the reference design
             uses throughout (`<span class="material-symbols-outlined">name</span>`).
             wght/FILL are variable axes: FILL 1 = solid/active state. */}

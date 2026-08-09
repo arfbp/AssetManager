@@ -5,13 +5,17 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { LanguageSwitcher } from "@/components/language/LanguageSwitcher";
+import { Button } from "@/components/ui/Button";
 import { logout, getStoredRole, getStoredIsPlatformAdmin } from "@/lib/session";
 import { SHELL_STRINGS, getStoredLocale, type Locale } from "@/lib/i18n";
+
+type NavSection = "fleet" | "deploy" | "administration" | "platform";
 
 interface NavItem {
   href: string;
   labelKey: keyof (typeof SHELL_STRINGS)["en"];
   icon: string;
+  section: NavSection;
   adminOnly?: boolean;
   // Distinct from adminOnly: it_support can still see this, only viewer
   // (read-only everywhere) can't — matches how the Downloads page's
@@ -25,19 +29,32 @@ interface NavItem {
   platformAdminOnly?: boolean;
 }
 
+// Grouped into labeled sidebar sections (see navLinks below) instead of one
+// flat list — the four sections roughly track who the items are for: every
+// signed-in user (Fleet), anyone who can push software (Deploy & Maintain),
+// this org's own admin (Administration), and the platform owner only
+// (Platform). Order within NAV_ITEMS only matters within a section; section
+// order/labels are defined once in SECTION_ORDER below.
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", labelKey: "dashboard", icon: "dashboard" },
-  { href: "/devices", labelKey: "devices", icon: "computer" },
-  { href: "/console", labelKey: "aiConsole", icon: "auto_awesome" },
-  { href: "/tracking", labelKey: "liveTracking", icon: "location_on" },
-  { href: "/assets", labelKey: "assetRegistry", icon: "inventory_2" },
-  { href: "/downloads", labelKey: "downloads", icon: "download", hideForViewer: true },
-  { href: "/software-deploy", labelKey: "softwareDeploy", icon: "install_desktop", adminOnly: true },
-  { href: "/agent-updates", labelKey: "agentUpdates", icon: "system_update", adminOnly: true },
-  { href: "/uninstall-software", labelKey: "uninstallSoftware", icon: "delete_sweep", adminOnly: true },
-  { href: "/users", labelKey: "users", icon: "group", adminOnly: true },
-  { href: "/organizations", labelKey: "organizations", icon: "corporate_fare", platformAdminOnly: true },
-  { href: "/audit-log", labelKey: "auditLog", icon: "history", platformAdminOnly: true },
+  { href: "/", labelKey: "dashboard", icon: "dashboard", section: "fleet" },
+  { href: "/devices", labelKey: "devices", icon: "computer", section: "fleet" },
+  { href: "/console", labelKey: "aiConsole", icon: "auto_awesome", section: "fleet" },
+  { href: "/tracking", labelKey: "liveTracking", icon: "location_on", section: "fleet" },
+  { href: "/assets", labelKey: "assetRegistry", icon: "inventory_2", section: "fleet" },
+  { href: "/downloads", labelKey: "downloads", icon: "download", section: "deploy", hideForViewer: true },
+  { href: "/software-deploy", labelKey: "softwareDeploy", icon: "install_desktop", section: "deploy", adminOnly: true },
+  { href: "/agent-updates", labelKey: "agentUpdates", icon: "system_update", section: "deploy", adminOnly: true },
+  { href: "/uninstall-software", labelKey: "uninstallSoftware", icon: "delete_sweep", section: "deploy", adminOnly: true },
+  { href: "/users", labelKey: "users", icon: "group", section: "administration", adminOnly: true },
+  { href: "/organizations", labelKey: "organizations", icon: "corporate_fare", section: "platform", platformAdminOnly: true },
+  { href: "/audit-log", labelKey: "auditLog", icon: "history", section: "platform", platformAdminOnly: true },
+];
+
+const SECTION_ORDER: { key: NavSection; labelKey: keyof (typeof SHELL_STRINGS)["en"] }[] = [
+  { key: "fleet", labelKey: "navSectionFleet" },
+  { key: "deploy", labelKey: "navSectionDeploy" },
+  { key: "administration", labelKey: "navSectionAdministration" },
+  { key: "platform", labelKey: "navSectionPlatform" },
 ];
 
 function initials(name: string): string {
@@ -106,25 +123,40 @@ export function AppShell({
   // Shared between the always-visible desktop sidebar and the mobile
   // slide-in drawer — one nav item list feeding two layouts, so a page
   // added to NAV_ITEMS never needs updating in two places, and the two
-  // surfaces can't drift out of sync on which links exist.
+  // surfaces can't drift out of sync on which links exist. Grouped by
+  // section (SECTION_ORDER) with a label above each non-empty group — a
+  // section a given role can't see anything in (e.g. Platform for a
+  // non-platform-admin) is skipped entirely, not shown with a label and no
+  // links under it.
   function navLinks(onNavigate?: () => void): React.ReactNode {
-    return visibleNavItems.map((item) => {
-      const active = pathname === item.href;
+    return SECTION_ORDER.map(({ key, labelKey }) => {
+      const items = visibleNavItems.filter((item) => item.section === key);
+      if (items.length === 0) return null;
       return (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={onNavigate}
-          className={`relative flex items-center gap-3 rounded-md py-2.5 pl-3 pr-3 text-sm font-medium transition-colors ${
-            active ? "bg-sidebar-active text-sidebar-ink-active" : "text-sidebar-ink hover:bg-sidebar-active/60 hover:text-sidebar-ink-active"
-          }`}
-        >
-          {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-sidebar-accent" aria-hidden="true" />}
-          <span className="material-symbols-outlined text-[20px]" style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}>
-            {item.icon}
-          </span>
-          {t[item.labelKey]}
-        </Link>
+        <div key={key} className="pb-3">
+          <p className="px-3 pb-1.5 pt-3 text-[10px] font-bold uppercase tracking-widest text-sidebar-ink-muted">{t[labelKey]}</p>
+          <div className="flex flex-col gap-0.5">
+            {items.map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={`relative flex items-center gap-3 rounded-md py-2.5 pl-3 pr-3 text-sm font-medium transition-colors ${
+                    active ? "bg-sidebar-active text-sidebar-ink-active" : "text-sidebar-ink hover:bg-sidebar-active/60 hover:text-sidebar-ink-active"
+                  }`}
+                >
+                  {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-sidebar-accent" aria-hidden="true" />}
+                  <span className="material-symbols-outlined text-[20px]" style={active ? { fontVariationSettings: "'FILL' 1" } : undefined}>
+                    {item.icon}
+                  </span>
+                  {t[item.labelKey]}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       );
     });
   }
@@ -133,12 +165,10 @@ export function AppShell({
     return (
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent text-white">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-            psychology
-          </span>
+          <img src="/optifleet-mark.svg" alt="" className="h-5 w-5" />
         </div>
         <div className="leading-none">
-          <h1 className="text-sm font-bold text-sidebar-ink-active">OptiFleet AI</h1>
+          <h1 className="font-display text-sm font-bold text-sidebar-ink-active">OptiFleet AI</h1>
           <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-sidebar-ink-muted">{t.backofficeConsole}</p>
         </div>
       </div>
@@ -197,7 +227,7 @@ export function AppShell({
             >
               <span className="material-symbols-outlined text-[22px]">menu</span>
             </button>
-            <span className="text-sm font-semibold text-ink-primary">OptiFleet AI</span>
+            <span className="font-display text-sm font-semibold text-ink-primary">OptiFleet AI</span>
           </div>
 
           <form onSubmit={handleSearch} className="hidden flex-1 max-w-xl sm:block">
@@ -222,13 +252,9 @@ export function AppShell({
             <span className="hidden text-xs text-ink-secondary md:inline">
               {t.signedInAs} <span className="font-medium text-ink-primary">{username}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => logout().then(() => window.location.reload())}
-              className="rounded-md border border-border px-2 py-1 text-xs text-ink-secondary hover:bg-gridline/40"
-            >
+            <Button variant="secondary" className="!px-2 !py-1 !text-xs" onClick={() => logout().then(() => window.location.reload())}>
               {t.logOut}
-            </button>
+            </Button>
             <LanguageSwitcher locale={locale} onChange={setLocale} />
             <ThemeToggle />
           </div>

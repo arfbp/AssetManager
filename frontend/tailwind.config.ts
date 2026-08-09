@@ -67,6 +67,15 @@ const config: Config = {
           '"Segoe UI"',
           "sans-serif",
         ],
+        // Display/data face — see layout.tsx's font <link> and the
+        // .font-display utility in globals.css.
+        mono: [
+          '"IBM Plex Mono"',
+          "ui-monospace",
+          "SFMono-Regular",
+          '"Courier New"',
+          "monospace",
+        ],
       },
     },
   },

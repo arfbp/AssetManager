@@ -32,6 +32,10 @@ interface ShellStrings {
   users: string;
   organizations: string;
   auditLog: string;
+  navSectionFleet: string;
+  navSectionDeploy: string;
+  navSectionAdministration: string;
+  navSectionPlatform: string;
   backofficeConsole: string;
   searchPlaceholder: string;
   signedIn: string;
@@ -54,6 +58,10 @@ export const SHELL_STRINGS: Record<Locale, ShellStrings> = {
     users: "Users",
     organizations: "Organizations",
     auditLog: "Audit Log",
+    navSectionFleet: "Fleet",
+    navSectionDeploy: "Deploy & Maintain",
+    navSectionAdministration: "Administration",
+    navSectionPlatform: "Platform",
     backofficeConsole: "Backoffice Console",
     searchPlaceholder: "Search devices by name…",
     signedIn: "Signed in",
@@ -74,6 +82,10 @@ export const SHELL_STRINGS: Record<Locale, ShellStrings> = {
     users: "ผู้ใช้งาน",
     organizations: "องค์กร",
     auditLog: "ประวัติการใช้งาน",
+    navSectionFleet: "ฟลีต",
+    navSectionDeploy: "ติดตั้ง & บำรุงรักษา",
+    navSectionAdministration: "การจัดการ",
+    navSectionPlatform: "แพลตฟอร์ม",
     backofficeConsole: "ระบบหลังบ้าน",
     searchPlaceholder: "ค้นหาอุปกรณ์ตามชื่อ…",
     signedIn: "เข้าสู่ระบบแล้ว",
@@ -94,6 +106,10 @@ export const SHELL_STRINGS: Record<Locale, ShellStrings> = {
     users: "用户",
     organizations: "组织",
     auditLog: "审计日志",
+    navSectionFleet: "车队",
+    navSectionDeploy: "部署与维护",
+    navSectionAdministration: "管理",
+    navSectionPlatform: "平台",
     backofficeConsole: "后台管理系统",
     searchPlaceholder: "按名称搜索设备…",
     signedIn: "已登录",
