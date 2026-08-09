@@ -25,7 +25,7 @@ import { evaluateParsedIntent } from "../security/guardrail.js";
 import { scanForBlacklistedContent } from "../security/blacklist.js";
 import { loginRateLimiter, createOrgRateLimiter } from "../security/rateLimiter.js";
 import { PendingActionStore } from "./pendingActions.js";
-import { verifyCredentials, listUsers, createUser, updateUserRole, updateUserProfile, resetPassword, deleteUser, otherAdminCount, DuplicateUsernameError } from "../auth/users.js";
+import { verifyCredentials, listUsers, createUser, updateUserRole, updateUserProfile, resetPassword, deleteUser, otherAdminCount, setUserStatus, DuplicateUsernameError } from "../auth/users.js";
 import { resolveOrgBySubdomain } from "../auth/orgResolver.js";
 import { createSetupToken, consumeSetupToken } from "../auth/passwordSetup.js";
 import { sendSetupLinkEmail } from "../notifications/channels/email.js";
@@ -36,7 +36,22 @@ import { listIncidents, listIncidentSummary } from "../incidents/incidentsStore.
 import { listConnectionHistory } from "../assets/connectionHistoryStore.js";
 import { lookupGeolocation } from "../geolocation/ipGeo.js";
 import type { AgentBuildRegistry } from "../agentBuilds.js";
-import { createOrganization, listOrganizations, getOrganizationCredentials, isValidSubdomain, DuplicateSubdomainError, PLATFORM_ORG_ID, setCustomDomain, DuplicateCustomDomainError, isValidCustomDomain } from "../orgs/orgsStore.js";
+import {
+  createOrganization,
+  listOrganizations,
+  getOrganizationCredentials,
+  isValidSubdomain,
+  DuplicateSubdomainError,
+  PLATFORM_ORG_ID,
+  setCustomDomain,
+  DuplicateCustomDomainError,
+  isValidCustomDomain,
+  setOrgStatus,
+  updateOrganization,
+  deleteOrganization,
+  PlatformOrgProtectedError,
+} from "../orgs/orgsStore.js";
+import { recordAuditEvent, listAuditEvents } from "../audit/auditStore.js";
 import type { OrgCredentialCache } from "../orgs/orgCredentials.js";
 import { streamOrgInstallerZip } from "../orgs/installerGenerator.js";
 
@@ -122,11 +137,25 @@ const SetCustomDomainRequestSchema = z.object({
   customDomain: z.string().min(1).max(253).nullable(),
 });
 
+// Both fields optional, same "combine in one call" shape as
+// UpdateUserRequestSchema below.
+const UpdateOrgRequestSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  subdomain: z.string().min(1).max(63).optional(),
+});
+
+const StatusEnum = z.enum(["active", "suspended"]);
+
+const SetOrgStatusRequestSchema = z.object({
+  status: StatusEnum,
+});
+
 // Every field optional: PATCH /users/:id can change role alone, password
-// alone, profile fields alone, or any combination in one call — never
-// required to resend the whole record.
+// alone, profile fields alone, status alone, or any combination in one
+// call — never required to resend the whole record.
 const UpdateUserRequestSchema = z.object({
   role: RoleEnum.optional(),
+  status: StatusEnum.optional(),
   password: z.string().min(8).max(200).optional(),
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
@@ -373,12 +402,33 @@ export function buildRouter(
         }
       }
 
+      // Same lockout reasoning as the role-change guard above — suspending
+      // is functionally equivalent to removing that admin's access, so it
+      // gets the identical last-admin and self-action checks delete
+      // already has (self-delete is blocked below in the DELETE handler;
+      // self-suspend is blocked here for the same reason).
+      if (body.status === "suspended") {
+        if (targetId === req.user!.userId) {
+          res.status(409).json({ error: "You can't suspend your own account." });
+          return;
+        }
+        const targetIsCurrentlyAdmin = (await listUsers(pool, orgId)).find((u) => u.id === targetId)?.role === "admin";
+        if (targetIsCurrentlyAdmin && (await otherAdminCount(pool, orgId, targetId)) === 0) {
+          res.status(409).json({ error: "Can't suspend the last remaining admin account." });
+          return;
+        }
+      }
+
       if (body.role) await updateUserRole(pool, orgId, targetId, body.role);
+      if (body.status) await setUserStatus(pool, orgId, targetId, body.status);
       if (body.password) await resetPassword(pool, orgId, targetId, body.password);
       if (body.firstName !== undefined || body.lastName !== undefined || body.email !== undefined) {
         await updateUserProfile(pool, orgId, targetId, { firstName: body.firstName, lastName: body.lastName, email: body.email });
       }
-      audit.info({ requestedBy: req.user!.username, targetId, roleChanged: Boolean(body.role), passwordReset: Boolean(body.password) }, "users: updated");
+      audit.info(
+        { requestedBy: req.user!.username, targetId, roleChanged: Boolean(body.role), statusChanged: body.status, passwordReset: Boolean(body.password) },
+        "users: updated",
+      );
       const users = await listUsers(pool, orgId);
       const updated = users.find((u) => u.id === targetId);
       if (!updated) {
@@ -495,6 +545,12 @@ export function buildRouter(
         { requestedBy: req.user!.username, orgId: created.org.id, subdomain, adminUsername: firstAdmin.username, usesSetupLink },
         "orgs: created",
       );
+      await recordAuditEvent(pool, {
+        actorUsername: req.user!.username,
+        orgId: created.org.id,
+        action: "org.created",
+        details: { orgName: created.org.name, subdomain, adminUsername: firstAdmin.username },
+      });
       res.status(201).json({
         org: created.org,
         agentAuthToken: created.agentAuthToken,
@@ -540,6 +596,7 @@ export function buildRouter(
         return;
       }
       audit.info({ requestedBy: req.user!.username, orgId, subdomain: found.org.subdomain }, "orgs: installer generated");
+      await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.installer_generated", details: { orgName: found.org.name } });
       streamOrgInstallerZip(res, { templateDir: cfg.agentInstallerTemplateDir, agentExePath: active.exePath }, found.org.subdomain, found.agentAuthToken, found.agentHmacSecret);
     } catch (err) {
       next(err);
@@ -574,6 +631,7 @@ export function buildRouter(
         const body = ResetOrgUserPasswordRequestSchema.parse(req.body);
         await resetPassword(pool, orgId, userId, body.password);
         audit.info({ requestedBy: req.user!.username, orgId, targetUserId: userId }, "orgs: user password reset by platform admin");
+        await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.user_password_reset", details: { targetUserId: userId } });
         res.status(204).end();
       } catch (err) {
         next(err);
@@ -619,6 +677,7 @@ export function buildRouter(
         }
 
         audit.info({ requestedBy: req.user!.username, orgId, targetUserId: userId }, "orgs: setup link resent by platform admin");
+        await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.invite_resent", details: { targetUserId: userId } });
         res.json({ setupLink, setupLinkEmailed });
       } catch (err) {
         next(err);
@@ -643,12 +702,105 @@ export function buildRouter(
       const org = await setCustomDomain(pool, orgId, domain);
       await orgCredentials.reload(pool);
       audit.info({ requestedBy: req.user!.username, orgId, customDomain: domain }, "orgs: custom domain updated");
+      await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.custom_domain_updated", details: { orgName: org.name, customDomain: domain } });
       res.json({ org });
     } catch (err) {
       if (err instanceof DuplicateCustomDomainError) {
         res.status(409).json({ error: err.message });
         return;
       }
+      next(err);
+    }
+  });
+
+  // Renames an org and/or moves it to a different subdomain — no cache
+  // reload needed for either: login resolution (orgResolver.ts) always
+  // reads subdomain fresh from Postgres, and CORS's orgDomainSuffix check
+  // is a dynamic suffix match, not something cached per-org (unlike
+  // custom_domain/agent_auth_token above, which genuinely are cached).
+  router.patch("/orgs/:id", requirePlatformAdmin, async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const orgId = req.params.id ?? "";
+      const body = UpdateOrgRequestSchema.parse(req.body);
+      const subdomain = body.subdomain !== undefined ? body.subdomain.trim().toLowerCase() : undefined;
+      if (subdomain !== undefined && !isValidSubdomain(subdomain)) {
+        res.status(422).json({ error: "Subdomain must be lowercase letters, digits, or hyphens, and can't start or end with a hyphen." });
+        return;
+      }
+      const org = await updateOrganization(pool, orgId, { name: body.name, subdomain });
+      audit.info({ requestedBy: req.user!.username, orgId, name: body.name, subdomain }, "orgs: updated");
+      await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.updated", details: { name: body.name, subdomain } });
+      res.json({ org });
+    } catch (err) {
+      if (err instanceof DuplicateSubdomainError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // Suspending blocks human login immediately (resolveOrgBySubdomain
+  // already filters status = 'active') and agent connections on their next
+  // reconnect/heartbeat (orgCredentials.reload's query does the same) — no
+  // other enforcement needed, both paths already funnel through those two
+  // checks. The platform org itself can never be suspended (orgsStore.ts's
+  // PlatformOrgProtectedError) — that would lock out every platform admin.
+  router.post("/orgs/:id/status", requirePlatformAdmin, async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const orgId = req.params.id ?? "";
+      const body = SetOrgStatusRequestSchema.parse(req.body);
+      const org = await setOrgStatus(pool, orgId, body.status);
+      await orgCredentials.reload(pool);
+      audit.info({ requestedBy: req.user!.username, orgId, status: body.status }, "orgs: status changed");
+      await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId, action: "org.status_changed", details: { orgName: org.name, status: body.status } });
+      res.json({ org });
+    } catch (err) {
+      if (err instanceof PlatformOrgProtectedError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // Real, irreversible deletion — see orgsStore.ts's deleteOrganization doc
+  // comment for exactly what gets cleaned up and why it has to be an
+  // explicit ordered transaction rather than a bare DELETE (every org_id
+  // foreign key in this schema is RESTRICT, not CASCADE, on purpose).
+  // audit_events for this org deliberately survive (ON DELETE SET NULL).
+  router.delete("/orgs/:id", requirePlatformAdmin, async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const orgId = req.params.id ?? "";
+      const org = (await listOrganizations(pool)).find((o) => o.id === orgId);
+      if (!org) {
+        res.status(404).json({ error: "organization not found" });
+        return;
+      }
+      await deleteOrganization(pool, orgId);
+      await orgCredentials.reload(pool);
+      audit.info({ requestedBy: req.user!.username, orgId, orgName: org.name }, "orgs: deleted");
+      await recordAuditEvent(pool, { actorUsername: req.user!.username, orgId: null, action: "org.deleted", details: { orgName: org.name, subdomain: org.subdomain } });
+      res.status(204).end();
+    } catch (err) {
+      if (err instanceof PlatformOrgProtectedError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // Platform-admin action history — backs the dashboard's Audit Log page.
+  // See audit/auditStore.ts and migrations/0010_audit_events.sql for scope
+  // (platform-admin actions specifically, not general per-org activity).
+  router.get("/audit-events", requirePlatformAdmin, async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      const result = await listAuditEvents(pool, { limit, offset });
+      res.json(result);
+    } catch (err) {
       next(err);
     }
   });

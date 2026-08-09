@@ -16,6 +16,7 @@ export interface UserSummary {
   id: string;
   username: string;
   role: Role;
+  status: string;
   createdAt: string;
   // Basic profile fields, separate from the login identifier (username) —
   // null for accounts created before these existed.

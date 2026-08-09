@@ -14,7 +14,7 @@
 // NAT'd public IP), while still capping a scripted guessing run at under
 // 1,000 attempts/day — nowhere near enough to brute-force a real random
 // password, and slow enough that it stops being a practical attack path.
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request } from "express";
 
 export const loginRateLimiter = rateLimit({
@@ -39,13 +39,18 @@ export const loginRateLimiter = rateLimit({
 // per-IP since login has no org-scoped session yet to key on). Falls back
 // to req.ip only for the theoretical case of this running before auth
 // middleware; every real call site here sits behind session validation.
+// The fallback goes through ipKeyGenerator (not a raw req.ip string) —
+// express-rate-limit validates at startup that a custom keyGenerator
+// normalizes IPv6 addresses this way (an un-normalized IPv6 address lets a
+// client bypass the limit by rotating addresses within its own /64),
+// refusing to start otherwise (ERR_ERL_KEY_GEN_IPV6).
 export function createOrgRateLimiter(opts: { windowMs: number; limit: number; message: string }) {
   return rateLimit({
     windowMs: opts.windowMs,
     limit: opts.limit,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req: Request) => (req as Request & { user?: { orgId?: string } }).user?.orgId ?? req.ip ?? "unknown",
+    keyGenerator: (req: Request) => (req as Request & { user?: { orgId?: string } }).user?.orgId ?? ipKeyGenerator(req.ip ?? "unknown"),
     message: { error: opts.message },
   });
 }

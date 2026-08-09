@@ -40,8 +40,12 @@ export class OrgCredentialCache {
   }
 
   async reload(pool: Pool): Promise<void> {
+    // status = 'active' — a suspended org's agent token simply stops
+    // resolving here, the same generic rejection every other invalid
+    // token already gets in verifyClient (ws/server.ts). No special-casing
+    // needed anywhere else: this is the one place agent auth is resolved.
     const { rows } = await pool.query<{ id: string; agent_auth_token: string; agent_hmac_secret: string }>(
-      `SELECT id, agent_auth_token, agent_hmac_secret FROM organizations WHERE agent_auth_token <> ''`,
+      `SELECT id, agent_auth_token, agent_hmac_secret FROM organizations WHERE agent_auth_token <> '' AND status = 'active'`,
     );
     const next = new Map<string, OrgCredential>();
     const nextByOrgId = new Map<string, string>();

@@ -289,7 +289,7 @@ export function createUserAccount(input: {
 
 export function updateUserAccount(
   id: string,
-  input: { role?: Role; password?: string; firstName?: string; lastName?: string; email?: string },
+  input: { role?: Role; status?: "active" | "suspended"; password?: string; firstName?: string; lastName?: string; email?: string },
 ): Promise<{ user: UserSummary }> {
   return request(`/api/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
 }
@@ -323,6 +323,36 @@ export function setCustomDomain(orgId: string, domain: string | null): Promise<{
     method: "POST",
     body: JSON.stringify({ customDomain: domain }),
   });
+}
+
+// Both fields optional — rename, change subdomain, or both in one call.
+export function updateOrganization(orgId: string, input: { name?: string; subdomain?: string }): Promise<{ org: OrganizationSummary }> {
+  return request(`/api/orgs/${encodeURIComponent(orgId)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+// Suspending blocks that org's human logins and agent connections
+// immediately (see server/src/orgs/orgCredentials.ts and orgResolver.ts).
+export function setOrgStatus(orgId: string, status: "active" | "suspended"): Promise<{ org: OrganizationSummary }> {
+  return request(`/api/orgs/${encodeURIComponent(orgId)}/status`, { method: "POST", body: JSON.stringify({ status }) });
+}
+
+// Real, irreversible deletion of the org and everything in it — see
+// server/src/orgs/orgsStore.ts's deleteOrganization doc comment.
+export function deleteOrganization(orgId: string): Promise<void> {
+  return request(`/api/orgs/${encodeURIComponent(orgId)}`, { method: "DELETE" });
+}
+
+export interface AuditEvent {
+  id: string;
+  actorUsername: string;
+  orgId: string | null;
+  action: string;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export function getAuditEvents(opts: { limit: number; offset: number }): Promise<{ events: AuditEvent[]; total: number }> {
+  return request(`/api/audit-events?limit=${opts.limit}&offset=${opts.offset}`);
 }
 
 export interface CreateOrgResult {

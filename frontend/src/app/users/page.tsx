@@ -306,6 +306,8 @@ function Users({ username }: { username: string }) {
   const [editTarget, setEditTarget] = useState<UserSummary | null>(null);
   const [resetTarget, setResetTarget] = useState<UserSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
+  const [suspendTarget, setSuspendTarget] = useState<UserSummary | null>(null);
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function reload(): void {
@@ -354,6 +356,37 @@ function Users({ username }: { username: string }) {
     }
   }
 
+  // Reactivating needs no confirmation (undoes a reversible state); suspend
+  // does, same reasoning as delete — it immediately blocks that person from
+  // logging in or using an already-open session.
+  async function handleReactivate(user: UserSummary): Promise<void> {
+    setStatusBusyId(user.id);
+    setActionError(null);
+    try {
+      await updateUserAccount(user.id, { status: "active" });
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to reactivate user."));
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
+  async function handleConfirmSuspend(): Promise<void> {
+    if (!suspendTarget) return;
+    setStatusBusyId(suspendTarget.id);
+    try {
+      await updateUserAccount(suspendTarget.id, { status: "suspended" });
+      setSuspendTarget(null);
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to suspend user."));
+      setSuspendTarget(null);
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
   return (
     <AppShell username={username}>
       <div className="mx-auto flex max-w-[1200px] flex-col gap-4">
@@ -383,7 +416,7 @@ function Users({ username }: { username: string }) {
             <table className="w-full text-left">
               <thead className="bg-gridline/30">
                 <tr>
-                  {["Name", "Username", "Email", "Role", "Created", "Actions"].map((h) => (
+                  {["Name", "Username", "Email", "Role", "Status", "Created", "Actions"].map((h) => (
                     <th key={h} className="p-4 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                       {h}
                     </th>
@@ -415,9 +448,18 @@ function Users({ username }: { username: string }) {
                           ))}
                         </select>
                       </td>
+                      <td className="p-4">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            u.status === "active" ? "bg-status-good/10 text-status-good" : "bg-gridline text-ink-muted"
+                          }`}
+                        >
+                          {u.status}
+                        </span>
+                      </td>
                       <td className="p-4 text-xs text-ink-muted">{formatRelativeTime(new Date(u.createdAt).getTime())}</td>
                       <td className="p-4">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
                             onClick={() => setEditTarget(u)}
@@ -431,6 +473,14 @@ function Users({ username }: { username: string }) {
                             className="rounded-md border border-border px-2 py-1 text-xs text-ink-secondary hover:bg-gridline/40"
                           >
                             Reset password
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSelf || statusBusyId === u.id}
+                            onClick={() => (u.status === "active" ? setSuspendTarget(u) : handleReactivate(u))}
+                            className="rounded-md border border-border px-2 py-1 text-xs text-ink-secondary hover:bg-gridline/40 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {u.status === "active" ? "Suspend" : "Reactivate"}
                           </button>
                           <button
                             type="button"
@@ -489,6 +539,21 @@ function Users({ username }: { username: string }) {
         busy={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={suspendTarget !== null}
+        title="Suspend this user?"
+        message={
+          suspendTarget
+            ? `"${suspendTarget.username}" won't be able to log in, and any session they already have open stops working immediately. Their account and history stay intact — reactivate anytime.`
+            : ""
+        }
+        confirmLabel="Suspend"
+        tone="warning"
+        busy={statusBusyId === suspendTarget?.id}
+        onConfirm={handleConfirmSuspend}
+        onCancel={() => setSuspendTarget(null)}
       />
     </AppShell>
   );

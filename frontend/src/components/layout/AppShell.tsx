@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/uninstall-software", labelKey: "uninstallSoftware", icon: "delete_sweep", adminOnly: true },
   { href: "/users", labelKey: "users", icon: "group", adminOnly: true },
   { href: "/organizations", labelKey: "organizations", icon: "corporate_fare", platformAdminOnly: true },
+  { href: "/audit-log", labelKey: "auditLog", icon: "history", platformAdminOnly: true },
 ];
 
 function initials(name: string): string {

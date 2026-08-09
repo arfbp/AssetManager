@@ -159,3 +159,90 @@ export async function createOrganization(pool: Pool, name: string, subdomain: st
     throw err;
   }
 }
+
+// Thrown by every operation below that would otherwise let the platform
+// org (PLATFORM_ORG_ID) be suspended or deleted — that org holds the only
+// accounts capable of managing every other org, so doing either to it would
+// be a total, unrecoverable platform lockout with no other path back in.
+export class PlatformOrgProtectedError extends Error {
+  constructor(action: string) {
+    super(`The platform organization can't be ${action} — it would lock out every platform admin.`);
+    this.name = "PlatformOrgProtectedError";
+  }
+}
+
+export async function setOrgStatus(pool: Pool, orgId: string, status: "active" | "suspended"): Promise<OrganizationSummary> {
+  if (orgId === PLATFORM_ORG_ID && status === "suspended") throw new PlatformOrgProtectedError("suspended");
+  const { rows } = await pool.query<OrganizationRow>(
+    `UPDATE organizations SET status = $2 WHERE id = $1
+     RETURNING id, name, subdomain, custom_domain, status, created_at`,
+    [orgId, status],
+  );
+  const row = rows[0];
+  if (!row) throw new Error(`organization not found: ${orgId}`);
+  return rowToSummary(row);
+}
+
+// Every field optional — same "combine everything in one call" shape as
+// auth/users.ts's updateUserProfile/PATCH /users/:id.
+export async function updateOrganization(
+  pool: Pool,
+  orgId: string,
+  fields: { name?: string | undefined; subdomain?: string | undefined },
+): Promise<OrganizationSummary> {
+  try {
+    if (fields.name !== undefined) {
+      await pool.query(`UPDATE organizations SET name = $2 WHERE id = $1`, [orgId, fields.name]);
+    }
+    if (fields.subdomain !== undefined) {
+      await pool.query(`UPDATE organizations SET subdomain = $2 WHERE id = $1`, [orgId, fields.subdomain]);
+    }
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+      throw new DuplicateSubdomainError(fields.subdomain ?? "");
+    }
+    throw err;
+  }
+  const { rows } = await pool.query<OrganizationRow>(
+    `SELECT id, name, subdomain, custom_domain, status, created_at FROM organizations WHERE id = $1`,
+    [orgId],
+  );
+  const row = rows[0];
+  if (!row) throw new Error(`organization not found: ${orgId}`);
+  return rowToSummary(row);
+}
+
+// Real, irreversible deletion of an org and every row that depends on it —
+// every org_id foreign key in this schema was deliberately declared
+// RESTRICT, not CASCADE (see migrations/0002_org_id_backfill.sql), so a
+// bare `DELETE FROM organizations` would fail outright. This does the
+// ordered cleanup by hand, in one transaction, in the same dependency
+// order this project's own manual psql cleanups have used all along:
+// telemetry/history/incidents first (nothing references them), then
+// assets/agents, then sessions/setup-tokens (via users.org_id — both are
+// ON DELETE CASCADE from users(id), see schema.sql and migrations/0008),
+// then users themselves, then the org row. audit_events is deliberately
+// left alone — its org_id is ON DELETE SET NULL, so it survives this by
+// design (see migrations/0010's doc comment).
+export async function deleteOrganization(pool: Pool, orgId: string): Promise<void> {
+  if (orgId === PLATFORM_ORG_ID) throw new PlatformOrgProtectedError("deleted");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM telemetry_snapshots WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM command_history WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM device_incidents WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM asset_connection_history WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM assets WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM agents WHERE org_id = $1`, [orgId]);
+    await client.query(`DELETE FROM users WHERE org_id = $1`, [orgId]);
+    const { rowCount } = await client.query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
+    if (!rowCount) throw new Error(`organization not found: ${orgId}`);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

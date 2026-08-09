@@ -24,12 +24,14 @@ export interface UserRecord {
   passwordHash: string;
   role: Role;
   orgId: string;
+  status: string;
 }
 
 export interface UserSummary {
   id: string;
   username: string;
   role: Role;
+  status: string;
   createdAt: string;
   // Basic profile fields, separate from the login identifier (username) —
   // nullable because accounts created before this existed have neither.
@@ -42,6 +44,7 @@ interface UserSummaryRow {
   id: string;
   username: string;
   role: Role;
+  status: string;
   created_at: string;
   first_name: string | null;
   last_name: string | null;
@@ -53,6 +56,7 @@ function rowToSummary(row: UserSummaryRow): UserSummary {
     id: row.id,
     username: row.username,
     role: row.role,
+    status: row.status,
     createdAt: row.created_at,
     firstName: row.first_name,
     lastName: row.last_name,
@@ -61,13 +65,13 @@ function rowToSummary(row: UserSummaryRow): UserSummary {
 }
 
 export async function findUserByUsername(pool: Pool, orgId: string, username: string): Promise<UserRecord | null> {
-  const { rows } = await pool.query<{ id: string; username: string; password_hash: string; role: Role; org_id: string }>(
-    `SELECT id, username, password_hash, role, org_id FROM users WHERE org_id = $1 AND username = $2`,
+  const { rows } = await pool.query<{ id: string; username: string; password_hash: string; role: Role; org_id: string; status: string }>(
+    `SELECT id, username, password_hash, role, org_id, status FROM users WHERE org_id = $1 AND username = $2`,
     [orgId, username],
   );
   if (rows.length === 0) return null;
   const row = rows[0]!;
-  return { id: row.id, username: row.username, passwordHash: row.password_hash, role: row.role, orgId: row.org_id };
+  return { id: row.id, username: row.username, passwordHash: row.password_hash, role: row.role, orgId: row.org_id, status: row.status };
 }
 
 // Always runs the bcrypt compare even when the username doesn't exist
@@ -83,12 +87,17 @@ export async function verifyCredentials(
 ): Promise<UserRecord | null> {
   const user = await findUserByUsername(pool, orgId, username);
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
-  return ok && user ? user : null;
+  // Still runs the bcrypt compare above even for a suspended user (same
+  // constant-time reasoning as the DUMMY_HASH case) — only rejected after,
+  // and with the same generic "invalid username or password" outcome the
+  // caller already gives a wrong password, so a suspended account isn't
+  // distinguishable from a nonexistent or mistyped one.
+  return ok && user && user.status === "active" ? user : null;
 }
 
 export async function listUsers(pool: Pool, orgId: string): Promise<UserSummary[]> {
   const { rows } = await pool.query<UserSummaryRow>(
-    `SELECT id, username, role, created_at, first_name, last_name, email FROM users WHERE org_id = $1 ORDER BY created_at ASC`,
+    `SELECT id, username, role, status, created_at, first_name, last_name, email FROM users WHERE org_id = $1 ORDER BY created_at ASC`,
     [orgId],
   );
   return rows.map(rowToSummary);
@@ -119,7 +128,7 @@ export async function createUser(
   try {
     const { rows } = await pool.query<UserSummaryRow>(
       `INSERT INTO users (org_id, username, password_hash, role, first_name, last_name, email) VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, username, role, created_at, first_name, last_name, email`,
+       RETURNING id, username, role, status, created_at, first_name, last_name, email`,
       [orgId, username, passwordHash, role, profile.firstName ?? null, profile.lastName ?? null, profile.email ?? null],
     );
     return rowToSummary(rows[0]!);
@@ -151,15 +160,18 @@ export async function updateUserProfile(
   }
 }
 
-// Counts admins EXCLUDING the given user id, WITHIN the same org — used to
-// check "is this the last admin of this org" before a role change or delete
-// would leave that org with zero accounts able to manage its own users, a
-// real lockout, not just an inconvenience (there's no self-registration path
-// to recover from it). Deliberately org-scoped: another org having plenty of
-// admins is irrelevant to whether this org is about to lock itself out.
+// Counts ACTIVE admins EXCLUDING the given user id, WITHIN the same org —
+// used to check "is this the last admin of this org" before a role change,
+// suspend, or delete would leave that org with zero accounts able to
+// manage its own users, a real lockout, not just an inconvenience (there's
+// no self-registration path to recover from it). Only 'active' counts — a
+// suspended admin can't actually do anything, so they don't save this org
+// from a lockout either. Deliberately org-scoped: another org having
+// plenty of admins is irrelevant to whether this org is about to lock
+// itself out.
 export async function otherAdminCount(pool: Pool, orgId: string, excludingUserId: string): Promise<number> {
   const { rows } = await pool.query<{ count: string }>(
-    `SELECT count(*) AS count FROM users WHERE org_id = $1 AND role = 'admin' AND id <> $2`,
+    `SELECT count(*) AS count FROM users WHERE org_id = $1 AND role = 'admin' AND status = 'active' AND id <> $2`,
     [orgId, excludingUserId],
   );
   return Number(rows[0]?.count ?? 0);
@@ -167,6 +179,14 @@ export async function otherAdminCount(pool: Pool, orgId: string, excludingUserId
 
 export async function updateUserRole(pool: Pool, orgId: string, userId: string, role: Role): Promise<void> {
   await pool.query(`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`, [role, userId, orgId]);
+}
+
+// Suspending doesn't touch any existing open session row — validateSession
+// (sessions.ts) re-checks status fresh on every request, same as it
+// already does for role/orgId, so a suspend takes effect on that user's
+// very next request rather than only at their next login attempt.
+export async function setUserStatus(pool: Pool, orgId: string, userId: string, status: "active" | "suspended"): Promise<void> {
+  await pool.query(`UPDATE users SET status = $1 WHERE id = $2 AND org_id = $3`, [status, userId, orgId]);
 }
 
 export async function resetPassword(pool: Pool, orgId: string, userId: string, password: string): Promise<void> {

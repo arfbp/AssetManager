@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AppShell } from "@/components/layout/AppShell";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   ApiError,
   getOrganizations,
@@ -12,6 +13,9 @@ import {
   resetOrgUserPassword,
   resendInvite,
   setCustomDomain,
+  updateOrganization,
+  setOrgStatus,
+  deleteOrganization,
   type OrganizationSummary,
   type CreateOrgResult,
 } from "@/lib/api";
@@ -22,6 +26,12 @@ import type { UserSummary } from "@/lib/types";
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
+
+// Same fixed UUID as server/src/orgs/orgsStore.ts's PLATFORM_ORG_ID — this
+// org holds the only accounts that can manage every other org, so its own
+// row never gets suspend/delete actions (the server rejects both anyway;
+// disabling them here just avoids a doomed request and a confusing error).
+const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 // Subdomain preview mirrors session.ts's currentOrgSubdomain() — this org
 // won't actually be reachable at "<subdomain>.optifleet.ai" until Phase 6's
@@ -361,6 +371,144 @@ function CustomDomainModal({ org, onClose, onDone }: CustomDomainModalProps) {
   );
 }
 
+interface RenameOrgModalProps {
+  org: OrganizationSummary;
+  onClose: () => void;
+  onDone: (org: OrganizationSummary) => void;
+}
+
+function RenameOrgModal({ org, onClose, onDone }: RenameOrgModalProps) {
+  const [name, setName] = useState(org.name);
+  const [subdomain, setSubdomain] = useState(org.subdomain);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const changes: { name?: string; subdomain?: string } = {};
+      if (name.trim() !== org.name) changes.name = name.trim();
+      if (subdomain.trim().toLowerCase() !== org.subdomain) changes.subdomain = subdomain.trim().toLowerCase();
+      const res = await updateOrganization(org.id, changes);
+      onDone(res.org);
+    } catch (err) {
+      setError(errorMessage(err, "Failed to update organization."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <button type="button" aria-label="Dismiss" onClick={onClose} className="absolute inset-0 bg-black/40" />
+      <form onSubmit={handleSubmit} className="relative z-10 w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-2xl">
+        <h2 className="text-base font-semibold text-ink-primary">Rename / change subdomain</h2>
+        <p className="mt-1 text-xs text-ink-muted">Changing the subdomain takes effect immediately — no restart needed.</p>
+        <label className="mt-4 block text-xs text-ink-secondary">
+          Organization name
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+            className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+          />
+        </label>
+        <label className="mt-2 block text-xs text-ink-secondary">
+          Subdomain
+          <input
+            value={subdomain}
+            onChange={(e) => setSubdomain(e.target.value)}
+            disabled={busy}
+            className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+          />
+        </label>
+        {error && <p className="mt-3 text-xs text-status-critical">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-md border border-border px-4 py-2 text-sm text-ink-secondary hover:bg-gridline/40">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy || !name.trim() || !subdomain.trim()}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+interface DeleteOrgModalProps {
+  org: OrganizationSummary;
+  onClose: () => void;
+  onDeleted: () => void;
+}
+
+// Real, irreversible deletion (server/src/orgs/orgsStore.ts's
+// deleteOrganization) — requires typing the org's exact name before the
+// button enables, the same "type to confirm" pattern common SaaS dashboards
+// use for their one truly unrecoverable action. A plain yes/no ConfirmDialog
+// is used for suspend elsewhere on this page, since suspend is reversible.
+function DeleteOrgModal({ org, onClose, onDeleted }: DeleteOrgModalProps) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteOrganization(org.id);
+      onDeleted();
+    } catch (err) {
+      setError(errorMessage(err, "Failed to delete organization."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <button type="button" aria-label="Dismiss" onClick={onClose} className="absolute inset-0 bg-black/40" />
+      <div className="relative z-10 w-full max-w-sm rounded-xl border border-status-critical/30 bg-surface p-6 shadow-2xl">
+        <h2 className="text-base font-semibold text-status-critical">Delete "{org.name}"</h2>
+        <p className="mt-2 text-xs text-ink-secondary">
+          This permanently deletes the organization and every device, asset, telemetry record, and user account that belongs to it. This
+          cannot be undone.
+        </p>
+        <label className="mt-4 block text-xs text-ink-secondary">
+          Type <span className="font-mono font-semibold text-ink-primary">{org.name}</span> to confirm
+          <input
+            autoFocus
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            disabled={busy}
+            className="mt-1 w-full rounded-md border border-border bg-page px-3 py-2 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-status-critical disabled:opacity-50"
+          />
+        </label>
+        {error && <p className="mt-3 text-xs text-status-critical">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-md border border-border px-4 py-2 text-sm text-ink-secondary hover:bg-gridline/40">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={busy || typed !== org.name}
+            className="rounded-md bg-status-critical px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? "Deleting…" : "Delete permanently"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ResetOrgPasswordModalProps {
   org: OrganizationSummary;
   user: UserSummary;
@@ -564,11 +712,47 @@ function Organizations({ username }: { username: string }) {
   const [justCreated, setJustCreated] = useState<CreateOrgResult | null>(null);
   const [manageUsersOrg, setManageUsersOrg] = useState<OrganizationSummary | null>(null);
   const [domainOrg, setDomainOrg] = useState<OrganizationSummary | null>(null);
+  const [renameOrg, setRenameOrg] = useState<OrganizationSummary | null>(null);
+  const [suspendConfirmOrg, setSuspendConfirmOrg] = useState<OrganizationSummary | null>(null);
+  const [deleteOrgTarget, setDeleteOrgTarget] = useState<OrganizationSummary | null>(null);
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   function reload(): void {
     getOrganizations()
       .then((res) => setOrgs(res.orgs))
       .catch((err) => setLoadError(errorMessage(err, "Couldn't load organizations.")));
+  }
+
+  // Suspending is disruptive (blocks that org's logins and agent
+  // connections immediately) so it goes through a confirm dialog;
+  // reactivating just undoes that, no confirmation needed.
+  async function handleReactivate(org: OrganizationSummary): Promise<void> {
+    setStatusBusyId(org.id);
+    setActionError(null);
+    try {
+      await setOrgStatus(org.id, "active");
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to reactivate organization."));
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
+  async function handleConfirmSuspend(): Promise<void> {
+    if (!suspendConfirmOrg) return;
+    setStatusBusyId(suspendConfirmOrg.id);
+    setActionError(null);
+    try {
+      await setOrgStatus(suspendConfirmOrg.id, "suspended");
+      setSuspendConfirmOrg(null);
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to suspend organization."));
+    } finally {
+      setStatusBusyId(null);
+    }
   }
 
   useEffect(() => {
@@ -609,6 +793,8 @@ function Organizations({ username }: { username: string }) {
           </button>
         </div>
 
+        {actionError && <p className="text-sm text-status-critical">{actionError}</p>}
+
         <div className="glass-card overflow-hidden rounded-xl">
           {loadError ? (
             <p className="p-6 text-sm text-status-critical">{loadError}</p>
@@ -644,7 +830,7 @@ function Organizations({ username }: { username: string }) {
                     </td>
                     <td className="p-4 text-xs text-ink-muted">{formatRelativeTime(new Date(org.createdAt).getTime())}</td>
                     <td className="p-4 text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setManageUsersOrg(org)}
@@ -669,6 +855,35 @@ function Organizations({ username }: { username: string }) {
                           <span className="material-symbols-outlined text-[16px]">download</span>
                           Installer
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setRenameOrg(org)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink-secondary hover:bg-gridline/40"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                          Rename
+                        </button>
+                        {org.id !== PLATFORM_ORG_ID && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => (org.status === "active" ? setSuspendConfirmOrg(org) : handleReactivate(org))}
+                              disabled={statusBusyId === org.id}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-ink-secondary hover:bg-gridline/40 disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">{org.status === "active" ? "pause_circle" : "play_circle"}</span>
+                              {org.status === "active" ? "Suspend" : "Reactivate"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteOrgTarget(org)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-status-critical/30 px-2.5 py-1 text-xs font-medium text-status-critical hover:bg-status-critical/10"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                              Delete
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -700,6 +915,39 @@ function Organizations({ username }: { username: string }) {
           onClose={() => setDomainOrg(null)}
           onDone={() => {
             setDomainOrg(null);
+            reload();
+          }}
+        />
+      )}
+
+      {renameOrg && (
+        <RenameOrgModal
+          org={renameOrg}
+          onClose={() => setRenameOrg(null)}
+          onDone={() => {
+            setRenameOrg(null);
+            reload();
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={suspendConfirmOrg !== null}
+        title={`Suspend "${suspendConfirmOrg?.name}"?`}
+        message="This immediately blocks every login and agent connection for this organization. It stays fully intact and can be reactivated anytime."
+        confirmLabel="Suspend"
+        tone="warning"
+        busy={statusBusyId === suspendConfirmOrg?.id}
+        onConfirm={handleConfirmSuspend}
+        onCancel={() => setSuspendConfirmOrg(null)}
+      />
+
+      {deleteOrgTarget && (
+        <DeleteOrgModal
+          org={deleteOrgTarget}
+          onClose={() => setDeleteOrgTarget(null)}
+          onDeleted={() => {
+            setDeleteOrgTarget(null);
             reload();
           }}
         />

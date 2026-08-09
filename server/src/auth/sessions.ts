@@ -35,10 +35,13 @@ export async function createSession(pool: Pool, userId: string): Promise<string>
 
 export async function validateSession(pool: Pool, token: string): Promise<Session | null> {
   if (!token) return null;
+  // u.status = 'active' — same fresh-per-request treatment as role/org_id
+  // above: a user suspended mid-session is rejected on their very next
+  // request, not just blocked at their next login attempt.
   const { rows } = await pool.query<{ token: string; user_id: string; username: string; role: Role; org_id: string }>(
     `SELECT s.token, s.user_id, u.username, u.role, u.org_id FROM sessions s
      JOIN users u ON u.id = s.user_id
-     WHERE s.token = $1 AND s.expires_at > now()`,
+     WHERE s.token = $1 AND s.expires_at > now() AND u.status = 'active'`,
     [token],
   );
   if (rows.length === 0) return null;
