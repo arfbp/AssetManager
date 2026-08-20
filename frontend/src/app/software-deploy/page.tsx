@@ -12,12 +12,11 @@ import { DeviceSearchSelect } from "@/components/deploy/DeviceSearchSelect";
 interface NiniteApp {
   label: string;
   slug: string;
-  // Domain used to fetch a real per-app icon via a favicon service — not an
-  // asset this bundles itself, since a maintained, complete icon set for
-  // ~140 different vendors doesn't exist as an npm package worth adding for
-  // this. Google's favicon endpoint resolves practically any domain and
-  // degrades to a generic globe glyph rather than a broken image if it
-  // can't find one, so a wrong/outdated domain here never breaks the page.
+  // domain ที่ใช้ดึงไอคอนจริงของแต่ละแอปผ่าน favicon service — ไม่ได้ bundle
+  // asset เองเพราะ icon set ที่ครบและดูแลต่อเนื่องสำหรับ vendor ~140 เจ้า
+  // ไม่มี npm package ที่คุ้มจะเพิ่มเข้ามา favicon endpoint ของ Google
+  // resolve ได้แทบทุก domain และ fallback เป็นรูปโลกทั่วไปแทนรูปพังถ้าหาไม่
+  // เจอ เลย domain ที่ผิดหรือล้าสมัยตรงนี้ไม่ทำให้หน้าพังเลย
   icon: string;
 }
 
@@ -26,21 +25,19 @@ interface NiniteCategory {
   apps: NiniteApp[];
 }
 
-// Ninite (ninite.com) builds a small silent-installer .exe on the fly from a
-// URL shaped "ninite.com/<slug1>-<slug2>-.../ninite.exe" — this is a
-// long-standing, widely-used convention (not an officially documented API).
-// The slugs for well-established single-version apps (browsers, 7-Zip, Git,
-// etc.) are the long-standing documented ones. The many version-specific
-// entries below (.NET Desktop/ASP.NET Core Runtime x64/arm64 8/9/10, the
-// various JDK/JRE builds, the VC++ Redistributable years) mirror what
-// ninite.com's own catalog currently lists per the screenshots this was
-// built from, but Ninite doesn't publish a slug reference for that tier —
-// these are a best-effort naming, not verified against every one
-// individually. That's a low-risk gap, not a dangerous one: Ninite's
-// installer silently skips any slug it doesn't recognize rather than
-// failing the whole batch, and the generated URL is always shown below for
-// review before anything is dispatched. Anything still missing, or a slug
-// that turns out wrong, can go in the free-text field below instead.
+// Ninite (ninite.com) จะสร้าง silent-installer .exe เล็ก ๆ ขึ้นมาแบบ on-the-
+// fly จาก URL รูปแบบ "ninite.com/<slug1>-<slug2>-.../ninite.exe" — เป็น
+// convention ที่ใช้กันมานานและแพร่หลาย (ไม่ใช่ API ที่มี doc อย่างเป็นทางการ)
+// slug ของแอปแบบ single-version ที่รู้จักกันดี (browser, 7-Zip, Git ฯลฯ)
+// เป็นชุดที่มี doc มานานแล้ว ส่วน entry ที่ระบุ version เยอะ ๆ ด้านล่าง
+// (.NET Desktop/ASP.NET Core Runtime x64/arm64 8/9/10, JDK/JRE หลายรุ่น,
+// VC++ Redistributable แต่ละปี) อ้างอิงจาก catalog ของ ninite.com ตอนที่
+// สร้างไฟล์นี้ แต่ Ninite ไม่มี reference slug อย่างเป็นทางการสำหรับกลุ่มนี้
+// — เป็นการตั้งชื่อแบบ best-effort ไม่ได้ verify ทีละตัว แต่ความเสี่ยงต่ำ
+// ไม่ถึงขั้นอันตราย เพราะ installer ของ Ninite จะข้าม slug ที่ไม่รู้จักไป
+// เฉย ๆ ไม่ทำให้ทั้ง batch fail และ URL ที่ generate ก็โชว์ให้ review ก่อน
+// dispatch ทุกครั้งอยู่แล้ว ถ้ามีตัวไหนขาดหรือ slug ผิด ใส่เพิ่มในช่อง
+// free-text ด้านล่างแทนได้
 const CATALOG: NiniteCategory[] = [
   {
     name: "Web Browsers",
@@ -257,11 +254,10 @@ const CATALOG: NiniteCategory[] = [
   },
 ];
 
-// Ninite has no icon API of its own — the favicon service gives a real,
-// recognizable per-vendor mark for very little cost, and quietly falls back
-// to a blank/generic image (never a broken-image glyph) for any domain it
-// doesn't recognize, so an occasional wrong domain above just looks plain
-// rather than broken.
+// Ninite ไม่มี icon API ของตัวเอง — favicon service ให้ mark ของแต่ละ vendor
+// ที่จำได้จริง ๆ ในต้นทุนต่ำมาก และ fallback เป็นรูปเปล่า/generic เงียบ ๆ
+// (ไม่ใช่ไอคอนพัง) เมื่อเจอ domain ที่ไม่รู้จัก เลย domain ที่ผิดบางตัวข้าง
+// บนแค่ดูธรรมดา ไม่ดูพัง
 function AppIcon({ domain }: { domain: string }) {
   return (
     <img
@@ -275,15 +271,15 @@ function AppIcon({ domain }: { domain: string }) {
   );
 }
 
-// Emits "STATUS:<stage>" / "PROGRESS:<0-100>" lines the run_script executor
-// now streams live (internal/executor/executor.go's runScript, mirroring
-// how network_diagnostic already streamed) — DeployProgress below parses
-// these out of commandOutputs. Real, byte-accurate progress for the
-// download (a manual HttpWebRequest read-loop, since Invoke-WebRequest/
-// WebClient give no live progress from a headless script); "installing" is
-// necessarily indeterminate — no external silent installer (Ninite's or
-// otherwise) reports its own progress, so there is nothing truthful to show
-// a percentage for once the download finishes.
+// ยิงบรรทัด "STATUS:<stage>" / "PROGRESS:<0-100>" ที่ run_script executor
+// stream แบบ real-time อยู่แล้ว (runScript ใน internal/executor/executor.go
+// ตามแนวทางเดียวกับที่ network_diagnostic เคย stream) — DeployProgress
+// ด้านล่างจะ parse ค่านี้ออกจาก commandOutputs ส่วนดาวน์โหลดได้ progress
+// แบบ byte-accurate จริง (ใช้ read-loop ของ HttpWebRequest เอง เพราะ
+// Invoke-WebRequest/WebClient ไม่ให้ live progress จาก headless script)
+// ส่วน "installing" จำเป็นต้อง indeterminate เพราะ silent installer ภายนอก
+// (ของ Ninite หรือตัวอื่น) ไม่รายงาน progress ของตัวเอง เลยไม่มีตัวเลขที่
+// เชื่อถือได้จะโชว์หลังดาวน์โหลดเสร็จ
 function downloadLoop(destVar: string): string[] {
   return [
     `$respStream = $resp.GetResponseStream()`,
@@ -315,22 +311,20 @@ function buildNiniteScript(slugs: string[]): { url: string; script: string } {
     `$resp = $req.GetResponse()`,
     ...downloadLoop("$dest"),
     `Write-Output "STATUS:installing"`,
-    // -NoNewWindow matters here specifically because this script's own
-    // stdout/stderr are already redirected (piped back to the dashboard for
-    // live progress) — verified on real hardware that Start-Process without
-    // it hung/failed once this agent build started streaming output, where
-    // the older buffered-output build had run the identical Ninite install
-    // fine. Without -NoNewWindow, Start-Process's default launch path
-    // behaves differently when the calling process has no real console of
-    // its own (true for both "piped output" and "running as a Windows
-    // service"), which this agent always is.
-    // -PassThru + an explicit exit-code check matters: without it, this
-    // script only ever reports failure when PowerShell itself throws
-    // (a hang timeout, a parse error) — a silent installer that exits
-    // non-zero (a real failure) would otherwise sail through as
-    // "Completed successfully" purely because nothing crashed. 3010 is
-    // excluded deliberately — Windows Installer's own convention for
-    // "succeeded, but a reboot is needed," not a failure.
+    // -NoNewWindow สำคัญตรงนี้เพราะ stdout/stderr ของ script นี้ถูก redirect
+    // อยู่แล้ว (ส่งกลับไป dashboard เพื่อ live progress) — ทดสอบบนเครื่องจริง
+    // แล้วว่า Start-Process ที่ไม่มี flag นี้จะค้าง/fail ทันทีที่ agent build
+    // นี้เริ่ม stream output ทั้งที่ build เก่าแบบ buffered-output รัน Ninite
+    // install ตัวเดียวกันได้ปกติ ถ้าไม่ใส่ -NoNewWindow, path เริ่มโปรเซส
+    // default ของ Start-Process จะทำงานต่างออกไปเมื่อ process ที่เรียกไม่มี
+    // console จริงของตัวเอง (เป็นจริงทั้งกรณี "output ถูก pipe" และ "รันเป็น
+    // Windows service") ซึ่ง agent ตัวนี้เป็นแบบนั้นเสมอ
+    // -PassThru กับการเช็ค exit code ตรง ๆ ก็สำคัญ: ถ้าไม่มี script นี้จะ
+    // รายงาน failure ได้แค่ตอน PowerShell เอง throw (timeout, parse error)
+    // — installer ที่ exit ด้วย code ไม่ใช่ 0 (fail จริง) จะหลุดผ่านไปเป็น
+    // "Completed successfully" เพราะไม่มีอะไร crash 3010 ตั้งใจยกเว้นไว้
+    // เพราะเป็น convention ของ Windows Installer เองที่แปลว่า "สำเร็จ แต่
+    // ต้อง reboot" ไม่ใช่ failure
     `$proc = Start-Process -FilePath $dest -NoNewWindow -Wait -PassThru`,
     `if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) { throw "installer exited with code $($proc.ExitCode)" }`,
     `Remove-Item $dest -Force -ErrorAction SilentlyContinue`,
@@ -339,11 +333,10 @@ function buildNiniteScript(slugs: string[]): { url: string; script: string } {
   return { url, script };
 }
 
-// A sensible starting point per file type — every real installer's actual
-// silent switches vary by vendor, so this is a starting point to edit, never
-// trusted as-is. $file is defined by buildCustomScript below before this
-// line runs. Checks the real exit code before declaring success — see
-// buildNiniteScript's comment on why that matters.
+// จุดเริ่มต้นที่พอใช้ได้ต่อประเภทไฟล์ — silent switch จริงของแต่ละ installer
+// ต่างกันไปตาม vendor เลยเป็นแค่ค่าเริ่มต้นให้แก้ ไม่ควรเชื่อทั้งดุ้น $file
+// ถูก define โดย buildCustomScript ด้านล่างก่อนบรรทัดนี้จะรัน เช็ค exit code
+// จริงก่อนถือว่าสำเร็จ — ดูเหตุผลที่ comment ของ buildNiniteScript
 function defaultInstallCommand(filename: string): string {
   const exitCheck = `if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) { throw "installer exited with code $($proc.ExitCode)" }`;
   if (filename.toLowerCase().endsWith(".msi")) {
@@ -355,28 +348,27 @@ function defaultInstallCommand(filename: string): string {
 function buildCustomScript(uploaded: UploadedInstaller, installCommand: string): string {
   return [
     `$ErrorActionPreference = "Stop"`,
-    // The agent hub's own HTTPS listener uses a self-signed cert (see
-    // dist-agent-deploy-global/optifleet-cert.pem) — the Go agent pins it
-    // explicitly for its own requests, but a plain Invoke-WebRequest inside
-    // this script has no such trust configured and fails with "Could not
-    // establish trust relationship for the SSL/TLS secure channel" against
-    // Windows PowerShell 5.1's default trust store (verified on real
-    // hardware). A `ServerCertificateValidationCallback = { $true }`
-    // scriptblock looks like the obvious fix but actually fails differently
-    // ("There is no Runspace available to run scripts in this thread") —
-    // the TLS handshake callback runs on a worker thread with no
-    // PowerShell runspace bound to it, so a PS scriptblock can't execute
-    // there at all. A compiled ICertificatePolicy type has no such
-    // requirement, which is why this goes through Add-Type rather than a
-    // one-line callback — also verified by hitting the exact failure above
-    // on real hardware first.
+    // HTTPS listener ของ agent hub เองใช้ self-signed cert (ดู
+    // dist-agent-deploy-global/optifleet-cert.pem) — Go agent pin cert นี้
+    // ไว้ตรง ๆ สำหรับ request ของมันเอง แต่ Invoke-WebRequest ธรรมดาใน
+    // script นี้ไม่มี trust config แบบนั้น เลย fail ด้วย "Could not
+    // establish trust relationship for the SSL/TLS secure channel" กับ
+    // trust store default ของ Windows PowerShell 5.1 (ทดสอบบนเครื่องจริง
+    // แล้ว) scriptblock แบบ `ServerCertificateValidationCallback = { $true }`
+    // ดูเหมือนจะเป็นทางแก้ที่ตรงไปตรงมา แต่จริง ๆ fail คนละแบบ ("There is
+    // no Runspace available to run scripts in this thread") — callback
+    // ของ TLS handshake รันบน worker thread ที่ไม่มี PowerShell runspace
+    // ผูกอยู่เลย scriptblock ของ PS เลยรันตรงนั้นไม่ได้เลย type
+    // ICertificatePolicy ที่ compile แล้วไม่มีข้อจำกัดแบบนี้ เลยใช้
+    // Add-Type แทนการเขียน callback บรรทัดเดียว — ก็ยืนยันด้วยการเจอ error
+    // ด้านบนจริงบนเครื่องจริงมาก่อนแล้ว
     `Add-Type @"\nusing System.Net;\nusing System.Security.Cryptography.X509Certificates;\npublic class TrustAllCertsPolicy : ICertificatePolicy {\n    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) {\n        return true;\n    }\n}\n"@`,
     `[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy`,
-    // Windows PowerShell 5.1's .NET Framework defaults to an older TLS
-    // version that the agent hub (TLS 1.2 minimum) rejects outright —
-    // verified on real hardware as a *different* error than the cert one
-    // above ("An unexpected error occurred on a send" mid-handshake, not
-    // a trust failure), so both fixes are needed together, not either alone.
+    // .NET Framework ของ Windows PowerShell 5.1 default เป็น TLS version
+    // เก่าที่ agent hub (ขั้นต่ำ TLS 1.2) ปฏิเสธตรง ๆ — ทดสอบบนเครื่องจริง
+    // แล้วว่า error คนละแบบกับเรื่อง cert ด้านบน ("An unexpected error
+    // occurred on a send" กลาง handshake ไม่ใช่ trust failure) เลยต้องแก้
+    // ทั้งสองอย่างคู่กัน แก้แค่อันเดียวไม่พอ
     `[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12`,
     `Write-Output "STATUS:downloading"`,
     `$file = Join-Path $env:TEMP "${uploaded.filename}"`,
@@ -398,14 +390,14 @@ function SoftwareDeploy({ username }: { username: string }) {
 
   const [agentId, setAgentId] = useState("");
 
-  // Ninite mode state
+  // state ของโหมด Ninite
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [customSlugs, setCustomSlugs] = useState("");
   const [niniteBusy, setNiniteBusy] = useState(false);
   const [niniteResult, setNiniteResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [niniteCommandId, setNiniteCommandId] = useState<string | null>(null);
 
-  // Custom installer mode state
+  // state ของโหมด custom installer
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploaded, setUploaded] = useState<UploadedInstaller | null>(null);
   const [installCommand, setInstallCommand] = useState("");
@@ -537,12 +529,12 @@ function SoftwareDeploy({ username }: { username: string }) {
           <h2 className="text-sm font-semibold text-ink-primary">Option A — pick from Ninite's catalog</h2>
         </div>
 
-        {/* CSS multi-column, not grid: a grid row sizes every cell in it to
-            its tallest neighbor, so a 6-app category (Web Browsers) sitting
-            next to a 19-app one (.NET) left a huge dead gap underneath the
-            short one before the next row could start. Columns instead flow
-            each category directly beneath whichever came before it in the
-            same column, packing tightly like ninite.com's own layout. */}
+        {/* ใช้ CSS multi-column ไม่ใช่ grid: แถวของ grid จะปรับความสูงทุก
+            cell ให้เท่ากับตัวที่สูงสุดในแถว เลยถ้า category ที่มี 6 แอป
+            (Web Browsers) อยู่ข้าง ๆ ตัวที่มี 19 แอป (.NET) จะเหลือช่องว่าง
+            ใหญ่ ๆ ใต้ตัวสั้นก่อนแถวถัดไปจะเริ่มได้ ใช้ column แทนจะให้แต่ละ
+            category ไหลต่อจากตัวก่อนหน้าใน column เดียวกันเลย แน่นเหมือน
+            layout ของ ninite.com เอง */}
         <div className="glass-card columns-1 gap-6 rounded-xl p-card-padding sm:columns-2 lg:columns-3 2xl:columns-4">
           {CATALOG.map((cat) => (
             <div key={cat.name} className="mb-6 break-inside-avoid">
@@ -598,9 +590,9 @@ function SoftwareDeploy({ username }: { username: string }) {
           )}
           <DeployProgress commandId={niniteCommandId} output={niniteOutput} />
 
-          {/* Hidden once a result lands — the message/progress above already
-              shows ✓/✗, so the button disappears rather than sitting there
-              inviting a re-click on a command that already ran. */}
+          {/* ซ่อนปุ่มทันทีที่มีผลลัพธ์ออกมา — message/progress ด้านบนโชว์
+              ✓/✗ อยู่แล้ว ปุ่มก็หายไปเลยแทนที่จะค้างเชิญให้กดซ้ำ command
+              ที่รันไปแล้ว */}
           {!niniteOutput?.done && (
             <button
               type="button"

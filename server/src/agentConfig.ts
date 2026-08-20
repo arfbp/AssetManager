@@ -1,11 +1,10 @@
-// Reads the fleet's desired agent.yaml (config/agent-config-template.yaml)
-// so ws/server.ts can compare its hash against what each connected agent
-// reports in its own heartbeat and push a config_update when they differ —
-// the same convergence model agentBuilds.ts uses for the binary itself
-// (though that one no longer needs a restart to change — see its own doc
-// comment). Loaded once at server startup, not per-heartbeat: a template
-// change here still means restarting the server, so re-reading at startup
-// is the natural place for this.
+// อ่านไฟล์ agent.yaml ที่ fleet ต้องการ (config/agent-config-template.yaml)
+// เพื่อให้ ws/server.ts เอา hash ของมันไปเทียบกับที่ agent แต่ละตัวรายงานมาใน
+// heartbeat ของตัวเอง แล้ว push config_update ออกไปเมื่อค่าไม่ตรงกัน — โมเดล
+// convergence แบบเดียวกับที่ agentBuilds.ts ใช้กับตัว binary เอง (แต่ตัวนั้น
+// ไม่ต้อง restart แล้วเมื่อเปลี่ยนค่า — ดู doc comment ของมันเอง) โหลดครั้งเดียว
+// ตอนเซิร์ฟเวอร์ start ไม่ใช่ทุก heartbeat: การแก้ template ยังต้อง restart
+// เซิร์ฟเวอร์อยู่ดี ดังนั้นอ่านใหม่ตอน startup จึงเป็นจุดที่เหมาะสมที่สุด
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { log } from "./logger.js";
@@ -13,10 +12,10 @@ import { log } from "./logger.js";
 export interface DesiredAgentConfig {
   yaml: string;
   sha256: string;
-  // Derived from the template itself (whether "run_script" appears in its
-  // commands.allowed list) rather than a separate toggle to remember to
-  // flip — see internal/configpush's doc comment on ConfigUpdatePayload for
-  // why this is a fixed literal rather than a generic flag/value.
+  // มาจากตัว template เอง (เช็คว่ามี "run_script" อยู่ใน list ของ
+  // commands.allowed หรือไม่) แทนที่จะเป็น toggle แยกที่ต้องคอยจำไปเปิด — ดู
+  // doc comment ของ ConfigUpdatePayload ใน internal/configpush ว่าทำไมค่านี้
+  // ถึงเป็น literal คงที่แทนที่จะเป็น flag/value ทั่วไป
   enableRunScript: boolean;
 }
 

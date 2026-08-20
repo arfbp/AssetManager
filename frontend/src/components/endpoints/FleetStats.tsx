@@ -23,10 +23,10 @@ const BAR_TONE: Record<Tone, string> = {
   muted: "bg-ink-muted",
 };
 
-// Tailwind's JIT scanner needs literal class strings, not runtime-built
-// ones — a template like `border-l-status-${tone}` would silently produce
-// no styling at all, since the class name never appears verbatim anywhere
-// for Tailwind to pick up.
+// ตัว scanner แบบ JIT ของ Tailwind ต้องการ class string ที่เขียนตรงๆ
+// จะสร้างจาก runtime ไม่ได้ — ถ้าเขียนแบบ template `border-l-status-${tone}`
+// จะไม่ได้ style อะไรเลยแบบเงียบๆ เพราะไม่มี class name ที่ตรงตัวปรากฏให้
+// Tailwind หาเจอ
 const HIGHLIGHT_BORDER_TONE: Record<Tone, string> = {
   primary: "border-l-accent",
   good: "border-l-status-good",
@@ -69,7 +69,7 @@ function StatTile({ label, value, tone = "primary", icon, trend, barPercent, hig
   );
 }
 
-/** Fleet-wide online/offline/alert counts — shared by the Dashboard overview and the Devices page so the two never drift out of sync on how a count is derived. */
+/** จำนวน online/offline/alert รวมทั้งฟลีต — ใช้ร่วมกันทั้งหน้า Dashboard overview และหน้า Devices เพื่อไม่ให้วิธีคำนวณตัวเลขเพี้ยนไปคนละแบบ */
 export function FleetStats({ agents }: { agents: AgentSummary[] }) {
   const total = agents.length;
   const online = agents.filter((a) => a.status === "online").length;

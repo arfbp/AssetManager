@@ -1,19 +1,18 @@
-// User accounts. There is no public self-registration endpoint on purpose —
-// the very first account is created by an administrator via
-// `npm run user:create` (src/auth/createUser.ts, still works as a
-// bootstrap/recovery path if every admin account is somehow locked out);
-// every account after that is created through POST /api/users, gated to
-// the 'admin' role by auth/roles.ts's requireRole. Same "nothing exists
-// unless an operator explicitly configured it" philosophy already used for
-// device groups (src/groups/deviceGroups.ts) and the agent's command
-// allowlist.
+// บัญชีผู้ใช้ ไม่มี endpoint self-registration สาธารณะโดยตั้งใจ — บัญชีแรกสุด
+// ถูกสร้างโดยผู้ดูแลระบบผ่าน `npm run user:create`
+// (src/auth/createUser.ts ซึ่งยังใช้เป็น path สำหรับ bootstrap/กู้คืนระบบได้
+// ถ้าบัญชี admin ทุกบัญชีถูกล็อกไม่ให้เข้าใช้งานโดยบังเอิญ) ส่วนบัญชีหลังจากนั้น
+// ทั้งหมดสร้างผ่าน POST /api/users ซึ่งจำกัดไว้เฉพาะ role 'admin' โดย
+// requireRole ใน auth/roles.ts ใช้ปรัชญาเดียวกับที่ device groups
+// (src/groups/deviceGroups.ts) และ allowlist คำสั่งของ agent ใช้อยู่แล้ว คือ
+// "ไม่มีอะไรเกิดขึ้นเองถ้าผู้ควบคุมไม่ได้ตั้งค่าไว้ชัดเจน"
 //
-// Every function here takes an orgId and filters/scopes by it — usernames
-// are only unique within an org (see the `(org_id, username)` constraint in
-// migrations/0003_users_org_scoped_username.sql), and every mutation is
-// additionally constrained by org_id so an admin session from one org can
-// never act on another org's user by guessing/enumerating a UUID, even
-// though userId alone would otherwise be enough to find the row.
+// ทุกฟังก์ชันในไฟล์นี้รับ orgId มา และกรอง/จำกัดขอบเขตด้วยมัน — username
+// unique แค่ภายใน org เดียวกันเท่านั้น (ดู constraint `(org_id, username)`
+// ใน migrations/0003_users_org_scoped_username.sql) และทุกการแก้ไขข้อมูลก็
+// ถูกจำกัดด้วย org_id เพิ่มเติมด้วย เพื่อไม่ให้ session ของ admin จาก org
+// หนึ่งไปกระทำกับ user ของอีก org ได้ด้วยการเดา/ไล่ UUID แม้ userId เพียง
+// อย่างเดียวจะเพียงพอต่อการหาแถวนั้นเจอก็ตาม
 import type { Pool } from "pg";
 import { verifyPassword, hashPassword } from "./passwords.js";
 import type { Role } from "./roles.js";
@@ -33,8 +32,8 @@ export interface UserSummary {
   role: Role;
   status: string;
   createdAt: string;
-  // Basic profile fields, separate from the login identifier (username) —
-  // nullable because accounts created before this existed have neither.
+  // field ข้อมูลโปรไฟล์พื้นฐาน แยกจาก identifier สำหรับ login (username) —
+  // เป็น nullable เพราะบัญชีที่สร้างก่อนจะมี field พวกนี้ไม่มีค่าทั้งคู่
   firstName: string | null;
   lastName: string | null;
   email: string | null;
@@ -74,9 +73,9 @@ export async function findUserByUsername(pool: Pool, orgId: string, username: st
   return { id: row.id, username: row.username, passwordHash: row.password_hash, role: row.role, orgId: row.org_id, status: row.status };
 }
 
-// Always runs the bcrypt compare even when the username doesn't exist
-// (against a fixed dummy hash) so a login attempt's response time doesn't
-// leak whether the username is valid.
+// รัน bcrypt compare เสมอแม้ username จะไม่มีอยู่จริง (เทียบกับ dummy hash
+// คงที่) เพื่อไม่ให้เวลาตอบสนองของการพยายาม login เปิดเผยว่า username นั้น
+// มีอยู่จริงหรือไม่
 const DUMMY_HASH = "$2a$12$CwTycUXWue0Thq9StjUM0uJ8Q0/9AzMcTM8vXdVE0Vv3lZbowFVCG";
 
 export async function verifyCredentials(
@@ -87,11 +86,11 @@ export async function verifyCredentials(
 ): Promise<UserRecord | null> {
   const user = await findUserByUsername(pool, orgId, username);
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
-  // Still runs the bcrypt compare above even for a suspended user (same
-  // constant-time reasoning as the DUMMY_HASH case) — only rejected after,
-  // and with the same generic "invalid username or password" outcome the
-  // caller already gives a wrong password, so a suspended account isn't
-  // distinguishable from a nonexistent or mistyped one.
+  // ยังคงรัน bcrypt compare ด้านบนแม้กับ user ที่ถูก suspend อยู่ (เหตุผล
+  // constant-time เดียวกับกรณี DUMMY_HASH) — จะถูกปฏิเสธหลังจากนั้นเท่านั้น
+  // และด้วยผลลัพธ์ทั่วไปแบบเดียวกัน "invalid username or password" ที่ผู้
+  // เรียกได้รับอยู่แล้วกรณีรหัสผ่านผิด ดังนั้นบัญชีที่ถูก suspend จึงแยกไม่ออก
+  // จากบัญชีที่ไม่มีอยู่จริงหรือพิมพ์ผิด
   return ok && user && user.status === "active" ? user : null;
 }
 
@@ -140,9 +139,9 @@ export async function createUser(
   }
 }
 
-// Edits first/last name and email only — a separate concern from role
-// changes (updateUserRole) and password resets (resetPassword) below, same
-// as the UI keeps them as separate actions.
+// แก้ไขแค่ชื่อ/นามสกุลและอีเมลเท่านั้น — แยกความรับผิดชอบออกจากการเปลี่ยน
+// role (updateUserRole) และการรีเซ็ตรหัสผ่าน (resetPassword) ด้านล่าง
+// เหมือนกับที่ UI แยกเป็นคนละ action
 export async function updateUserProfile(
   pool: Pool,
   orgId: string,
@@ -160,15 +159,14 @@ export async function updateUserProfile(
   }
 }
 
-// Counts ACTIVE admins EXCLUDING the given user id, WITHIN the same org —
-// used to check "is this the last admin of this org" before a role change,
-// suspend, or delete would leave that org with zero accounts able to
-// manage its own users, a real lockout, not just an inconvenience (there's
-// no self-registration path to recover from it). Only 'active' counts — a
-// suspended admin can't actually do anything, so they don't save this org
-// from a lockout either. Deliberately org-scoped: another org having
-// plenty of admins is irrelevant to whether this org is about to lock
-// itself out.
+// นับ admin ที่ ACTIVE โดยไม่รวม user id ที่ระบุ ภายใน org เดียวกัน — ใช้
+// ตรวจสอบว่า "นี่คือ admin คนสุดท้ายของ org นี้หรือเปล่า" ก่อนที่การเปลี่ยน
+// role, suspend หรือ delete จะทำให้ org นั้นเหลือบัญชีที่จัดการ user ของ
+// ตัวเองได้เป็นศูนย์ ซึ่งคือการล็อกออกจริง ไม่ใช่แค่ความไม่สะดวก (เพราะไม่มี
+// self-registration ให้กู้คืนได้) นับเฉพาะ 'active' เท่านั้น — admin ที่ถูก
+// suspend ทำอะไรไม่ได้อยู่แล้ว จึงช่วย org ไม่ให้ล็อกออกไม่ได้เช่นกัน ตั้งใจ
+// จำกัดขอบเขตด้วย org: org อื่นมี admin เยอะแค่ไหนก็ไม่เกี่ยวกับว่า org นี้
+// กำลังจะล็อกตัวเองออกหรือไม่
 export async function otherAdminCount(pool: Pool, orgId: string, excludingUserId: string): Promise<number> {
   const { rows } = await pool.query<{ count: string }>(
     `SELECT count(*) AS count FROM users WHERE org_id = $1 AND role = 'admin' AND status = 'active' AND id <> $2`,
@@ -181,10 +179,10 @@ export async function updateUserRole(pool: Pool, orgId: string, userId: string, 
   await pool.query(`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`, [role, userId, orgId]);
 }
 
-// Suspending doesn't touch any existing open session row — validateSession
-// (sessions.ts) re-checks status fresh on every request, same as it
-// already does for role/orgId, so a suspend takes effect on that user's
-// very next request rather than only at their next login attempt.
+// การ suspend ไม่แตะแถว session ที่เปิดอยู่เลย — validateSession
+// (sessions.ts) จะตรวจสอบ status สดใหม่ทุก request อยู่แล้ว เหมือนกับที่ทำกับ
+// role/orgId ดังนั้นการ suspend จะมีผลตั้งแต่ request ถัดไปของ user นั้น
+// ทันที ไม่ต้องรอไปเจอตอน login ครั้งหน้า
 export async function setUserStatus(pool: Pool, orgId: string, userId: string, status: "active" | "suspended"): Promise<void> {
   await pool.query(`UPDATE users SET status = $1 WHERE id = $2 AND org_id = $3`, [status, userId, orgId]);
 }

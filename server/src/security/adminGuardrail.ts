@@ -1,14 +1,14 @@
-// The admin-command counterpart to guardrail.ts — the choke point every
-// parsed AdminParsedIntent passes through before it can touch an
-// organization or a user account. Same trust posture as guardrail.ts:
-// nothing here is authorization by itself, and every creation action opens
-// an already-validated dashboard form for a human to review rather than
-// executing blind (see the AI-console admin-commands plan's own design
-// note on why). Permission checks mirror the REST routes exactly —
-// *_organization actions need the same platform-admin boundary
-// routes.ts's requirePlatformAdmin already enforces, *_user actions need
-// the same org-admin boundary the /users routes already enforce — this is
-// not a new policy, just the same one reachable from a second entry point.
+// คู่หูของ guardrail.ts สำหรับคำสั่งฝั่ง admin — จุดตรวจจุดเดียวที่ทุก
+// AdminParsedIntent ที่ parse มาแล้วต้องผ่านก่อนจะไปแตะต้อง organization หรือ
+// user account ได้ ท่าทีความน่าเชื่อถือเดียวกับ guardrail.ts: ตัวมันเองไม่ได้
+// เป็น authorization และทุก action ที่สร้างของใหม่จะเปิดฟอร์ม dashboard ที่
+// validate ไว้แล้วให้มนุษย์ตรวจก่อนเสมอ ไม่ใช่ execute แบบไม่เห็นหน้า (ดู
+// design note ของ plan สำหรับ admin-commands บน AI console ว่าทำไม) การเช็ค
+// สิทธิ์สะท้อนตาม REST routes เป๊ะๆ — action ที่ลงท้าย *_organization ต้องการ
+// ขอบเขต platform-admin เดียวกับที่ requirePlatformAdmin ใน routes.ts บังคับ
+// ใช้อยู่แล้ว action ที่ลงท้าย *_user ต้องการขอบเขต org-admin เดียวกับที่
+// route /users บังคับใช้อยู่แล้ว — ไม่ใช่ policy ใหม่ แค่เป็น policy เดิมที่
+// เข้าถึงได้จาก entry point ที่สอง
 import type { Pool } from "pg";
 import type { AdminParsedIntent } from "../llm/adminSchema.js";
 import { listOrganizations } from "../orgs/orgsStore.js";
@@ -29,13 +29,13 @@ export type ResolvedAdminAction =
   | { action: "suspend_user" | "reactivate_user" | "delete_user"; orgId: string; userId: string; username: string }
   | { action: "generate_installer"; orgId: string; orgName: string; subdomain: string };
 
-// Only the tier of actions this file ever actually resolves to
-// "needs_confirmation" — create_organization/create_user resolve to
-// "admin_form" instead (a human completes the real dashboard form) and
-// generate_installer resolves to "allowed" (nothing to confirm) — see
-// evaluateAdminIntent below. Narrowed here (not just at the executor) so
-// the whole chain from guardrail verdict to admin/executeAdminAction.ts
-// stays exhaustively type-checked against exactly what can occur.
+// เฉพาะ tier ของ action ที่ไฟล์นี้จะ resolve ไปเป็น "needs_confirmation"
+// จริงๆ — create_organization/create_user จะ resolve ไปเป็น "admin_form"
+// แทน (ให้มนุษย์กรอกฟอร์ม dashboard จริง) และ generate_installer จะ
+// resolve ไปเป็น "allowed" (ไม่มีอะไรต้องยืนยัน) — ดู evaluateAdminIntent
+// ด้านล่าง ตีกรอบไว้ตรงนี้ (ไม่ใช่แค่ที่ executor) เพื่อให้ทั้งสาย ตั้งแต่ผล
+// ตัดสินของ guardrail ไปจนถึง admin/executeAdminAction.ts ถูก type-check
+// แบบ exhaustive ตรงกับสิ่งที่เกิดขึ้นได้จริงเป๊ะๆ
 export type ConfirmableAdminAction = Exclude<ResolvedAdminAction, { action: "create_organization" | "create_user" | "generate_installer" }>;
 
 export type AdminGuardrailVerdict =
@@ -48,10 +48,10 @@ function blocked(reason: string): AdminGuardrailVerdict {
   return { verdict: "blocked", reason };
 }
 
-// Case-insensitive exact match first, then substring — same two-pass shape
-// for both orgs and users below. Ambiguous (multiple substring matches) is
-// treated as a failure, not a guess: the caller has to be more specific
-// rather than the system silently picking one of several same-ish names.
+// จับคู่แบบตรงเป๊ะโดยไม่สนตัวพิมพ์ก่อน แล้วค่อย substring — รูปแบบสอง pass
+// เดียวกันสำหรับทั้ง org และ user ด้านล่าง กรณีกำกวม (substring match ได้
+// มากกว่าหนึ่ง) ถือเป็นความล้มเหลว ไม่ใช่การเดา: ผู้เรียกต้องระบุให้ชัดเจนขึ้น
+// แทนที่ระบบจะเดาเลือกเอาชื่อใดชื่อหนึ่งที่คล้ายกันแบบเงียบๆ
 function resolveByName<T extends { id: string }>(items: T[], name: (item: T) => string, query: string): T | "none" | "ambiguous" {
   const needle = query.trim().toLowerCase();
   if (!needle) return "none";

@@ -1,18 +1,19 @@
-// CLI bootstrap for a new organization — `npm run org:create -- <name> <subdomain>`.
-// Prints the generated agent credentials once (never retrievable again
-// through any endpoint) — same "write it down now" treatment as any other
-// freshly generated secret. The dashboard's own "Create organization" menu
-// (routes.ts's POST /orgs, admin-only within the platform org — see
-// orgsStore.ts's PLATFORM_ORG_ID) is the normal path; this exists for the
-// very first organization (before any dashboard session can exist to create
-// one from) and as a scriptable/ops alternative.
+// CLI สำหรับ bootstrap organization ใหม่ — `npm run org:create -- <name> <subdomain>`
+// พิมพ์ agent credentials ที่สร้างขึ้นออกมาแค่ครั้งเดียว (ไม่มีทางดึงกลับมาดู
+// ได้อีกผ่าน endpoint ไหนเลย) — แนวทาง "จดไว้ตอนนี้เลย" เดียวกับ secret ที่
+// สร้างขึ้นใหม่ตัวอื่น ๆ เมนู "Create organization" บน dashboard เอง (POST
+// /orgs ใน routes.ts จำกัดเฉพาะ admin ภายใน platform org — ดู PLATFORM_ORG_ID
+// ใน orgsStore.ts) คือ path ปกติ ส่วน CLI นี้มีไว้สำหรับ organization แรกสุด
+// (ก่อนที่จะมี dashboard session ให้สร้างจากได้เลย) และเป็นทางเลือกแบบ
+// scriptable/ops
 //
-// Known gap, deliberately not fixed here: this process has no way to signal
-// an already-running server to reload its in-memory OrgCredentialCache (only
-// the HTTP route can call credentials.reload() on the live instance — see
-// orgCredentials.ts). Used against a live server, an org created this way
-// silently doesn't work until a restart. The printed reminder below is the
-// mitigation; prefer the dashboard flow whenever the server is already up.
+// ช่องว่างที่รู้อยู่แล้วและตั้งใจไม่แก้ตรงนี้: process นี้ไม่มีทางส่งสัญญาณให้
+// server ที่กำลังรันอยู่ reload OrgCredentialCache ในหน่วยความจำได้ (มีแค่
+// HTTP route เท่านั้นที่เรียก credentials.reload() บน instance ที่รันอยู่จริง
+// ได้ — ดู orgCredentials.ts) ถ้าใช้กับ server ที่กำลังรันอยู่ org ที่สร้าง
+// ด้วยวิธีนี้จะใช้งานไม่ได้แบบเงียบ ๆ จนกว่าจะ restart คำเตือนที่พิมพ์ออกมา
+// ด้านล่างคือทางบรรเทา แนะนำให้ใช้ flow ของ dashboard แทนเมื่อ server ยังรัน
+// อยู่
 import "dotenv/config";
 import { initPool } from "../db/pool.js";
 import { createOrganization, isValidSubdomain, DuplicateSubdomainError } from "./orgsStore.js";

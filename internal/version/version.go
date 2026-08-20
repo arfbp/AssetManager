@@ -1,13 +1,12 @@
-// Package version holds the agent's own build version — a plain string
-// bumped by hand each time a new build is shipped (this project has no CI
-// pipeline that stamps this automatically). The central server compares
-// this against downloads/agent-version.txt (see server/src/index.ts's
-// loadLatestAgentBuild) to decide whether a connected agent needs to
-// self-update — see internal/selfupdate.
+// Package version เก็บ build version ของ agent เอง — เป็น string ธรรมดา
+// ที่ bump มือทุกครั้งที่ปล่อย build ใหม่ (โปรเจกต์นี้ยังไม่มี CI pipeline
+// ที่ stamp ค่านี้ให้อัตโนมัติ) central server เทียบค่านี้กับ
+// downloads/agent-version.txt (ดู loadLatestAgentBuild ของ
+// server/src/index.ts) เพื่อตัดสินใจว่า agent ที่เชื่อมต่ออยู่ต้อง
+// self-update หรือไม่ — ดู internal/selfupdate
 package version
 
-// Version must be bumped every time a new agent build is placed in the
-// server's downloads/ folder — otherwise already-updated agents and
-// not-yet-updated ones both report the same string and the server can't
-// tell them apart.
-const Version = "2026.08.05-11"
+// Version ต้อง bump ทุกครั้งที่มี agent build ใหม่ถูกวางไว้ในโฟลเดอร์
+// downloads/ ของ server — ไม่งั้น agent ที่ update แล้วกับที่ยังไม่ update
+// จะรายงาน string เดียวกัน แล้ว server จะแยกไม่ออกว่าตัวไหนเป็นตัวไหน
+const Version = "2026.08.10-3"

@@ -6,12 +6,12 @@ import { StatusBadge } from "@/components/status/StatusBadge";
 import { ChatConsole } from "@/components/chat/ChatConsole";
 import { useDashboardSocket } from "@/hooks/useDashboardSocket";
 
-// Standalone AI Console — same ChatConsole used inside a device's drawer,
-// but reachable directly from the sidebar without opening a specific device
-// first. Defaults to "All devices" scope (no defaultScope/history filter),
-// so operators can dispatch fleet-wide or group commands from here without
-// the "device drawer with nothing selected" framing the old
-// /devices?console=1 deep link used.
+// หน้า AI Console แบบ standalone — ใช้ ChatConsole ตัวเดียวกับที่อยู่ใน drawer
+// ของแต่ละ device แต่เข้าถึงได้ตรงจาก sidebar โดยไม่ต้องเปิด device ใดก่อน
+// ค่าเริ่มต้นเป็น scope "All devices" (ไม่ส่ง defaultScope/history filter)
+// เพื่อให้ operator สั่งคำสั่งระดับ fleet หรือกลุ่ม device ได้จากตรงนี้เลย
+// โดยไม่ต้องผ่าน frame แบบเดิมที่ deep link /devices?console=1 ใช้ (เปิด
+// device drawer แบบไม่ได้เลือก device ใดไว้)
 function Console({ username }: { username: string }) {
   const { agents, history, connectionStatus, commandOutputs } = useDashboardSocket();
 

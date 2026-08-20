@@ -23,11 +23,11 @@ interface EditProfileModalProps {
   onDone: () => void;
 }
 
-// Separate from AddUserModal (create) and ResetPasswordModal (a distinct
-// concern below) — edits only first/last name and email for an existing
-// account. Pre-fills blank for a legacy account that predates these fields
-// rather than showing "null" or leaving the admin unable to tell whether a
-// save is filling in missing data vs overwriting something already there.
+// แยกจาก AddUserModal (สร้าง) และ ResetPasswordModal (คนละเรื่องด้านล่าง)
+// — แก้ไขได้แค่ first/last name กับ email ของ account ที่มีอยู่แล้ว
+// account เก่าที่มีมาก่อน field พวกนี้จะ pre-fill เป็นค่าว่าง แทนที่จะโชว์
+// "null" หรือทำให้ admin แยกไม่ออกว่า save คือเติมข้อมูลที่ขาดหรือเขียนทับ
+// ของเดิม
 function EditProfileModal({ user, onClose, onDone }: EditProfileModalProps) {
   const [firstName, setFirstName] = useState(user.firstName ?? "");
   const [lastName, setLastName] = useState(user.lastName ?? "");
@@ -229,9 +229,9 @@ function Users({ username }: { username: string }) {
     }
   }
 
-  // Reactivating needs no confirmation (undoes a reversible state); suspend
-  // does, same reasoning as delete — it immediately blocks that person from
-  // logging in or using an already-open session.
+  // reactivate ไม่ต้อง confirm (แค่ยกเลิก state ที่ reversible) ส่วน suspend
+  // ต้อง confirm ด้วยเหตุผลเดียวกับ delete — มันบล็อคคนคนนั้นจาก login หรือ
+  // ใช้ session ที่เปิดค้างอยู่ทันที
   async function handleReactivate(user: UserSummary): Promise<void> {
     setStatusBusyId(user.id);
     setActionError(null);

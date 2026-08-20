@@ -1,10 +1,9 @@
-// Package selfupdate applies a signed SelfUpdatePayload (see
-// internal/transport/protocol.go's own doc comment on why this is a
-// completely separate, more tightly-scoped trust path than an ordinary
-// dispatched command): downloads the new build, verifies its checksum,
-// then hands off to a platform-specific swap-and-restart step
-// (applyPlatform, implemented in selfupdate_windows.go — a no-op stub
-// elsewhere for now, see selfupdate_other.go).
+// Package selfupdate ใช้ SelfUpdatePayload ที่เซ็นมาแล้ว (ดู doc comment
+// ของ internal/transport/protocol.go เองว่าทำไมนี่ถึงเป็น trust path ที่
+// แยกออกไปและจำกัดขอบเขตแคบกว่าคำสั่งที่ dispatch แบบปกติ): download build
+// ใหม่ ตรวจสอบ checksum แล้วส่งต่อให้ขั้นตอน swap-and-restart เฉพาะ
+// แพลตฟอร์ม (applyPlatform ที่ implement ไว้ใน selfupdate_windows.go —
+// ตอนนี้เป็น stub เปล่า ๆ บนแพลตฟอร์มอื่น ดู selfupdate_other.go)
 package selfupdate
 
 import (
@@ -33,18 +32,18 @@ type Config struct {
 	CACertPath     string
 }
 
-// Apply verifies payload's signature and freshness, downloads the new
-// binary, verifies its checksum, then swaps it in and restarts the service.
-// Returns nil without doing anything if payload.Version already matches
-// what's currently running (a duplicate push landing twice is a no-op, not
-// an error).
+// Apply ตรวจสอบ signature และความสดใหม่ของ payload, download ไบนารีใหม่,
+// ตรวจสอบ checksum แล้วสลับไฟล์เข้าไปและ restart service คืนค่า nil โดยไม่
+// ทำอะไรเลยถ้า payload.Version ตรงกับที่กำลังรันอยู่แล้ว (push ซ้ำที่มาถึง
+// สองครั้งถือเป็น no-op ไม่ใช่ error)
 func Apply(ctx context.Context, cfg Config, payload transport.SelfUpdatePayload, log zerolog.Logger) error {
 	if !payload.VerifySignature(cfg.HMACSecret) {
 		return fmt.Errorf("selfupdate: signature verification failed")
 	}
-	// Same freshness window internal/executor uses for ordinary commands —
-	// stops a captured-and-replayed self_update message (e.g. re-pushing an
-	// old, since-superseded version) from being accepted long after issue.
+	// ใช้ freshness window เดียวกับที่ internal/executor ใช้กับคำสั่งปกติ —
+	// ป้องกัน message self_update ที่ถูกดักจับแล้วส่งซ้ำ (เช่น push
+	// เวอร์ชันเก่าที่ถูกแทนที่ไปแล้ว) ไม่ให้ถูกยอมรับหลังจากออกคำสั่งมานาน
+	// แล้ว
 	if age := time.Since(time.Unix(payload.IssuedAtUnix, 0)); age > 2*time.Minute || age < -30*time.Second {
 		return fmt.Errorf("selfupdate: stale or future-dated update instruction (age %s)", age)
 	}

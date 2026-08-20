@@ -10,9 +10,11 @@ interface EndpointCardProps {
 
 export function EndpointCard({ agent, onSelect }: EndpointCardProps) {
   const snap = agent.lastTelemetry;
-  const worstDisk = snap?.disks.length
-    ? snap.disks.reduce((worst, d) => (d.used_percent > worst.used_percent ? d : worst))
-    : null;
+  // disks เองก็เป็น null ได้ (ไม่ใช่แค่ lastTelemetry) — ฟังก์ชันแจกแจง
+  // disk partition ของ Go agent จะคืนค่า nil เปล่าๆ เมื่อทำงานล้มเหลว
+  // ซึ่ง serialize ออกมาเป็น JSON null ไม่ใช่ []
+  const disks = snap?.disks ?? [];
+  const worstDisk = disks.length ? disks.reduce((worst, d) => (d.used_percent > worst.used_percent ? d : worst)) : null;
 
   const overallSeverity =
     agent.status === "offline"

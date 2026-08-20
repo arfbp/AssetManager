@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { parseCsv, toCsv } from "@/lib/csv";
+import { parseCsv, readCsvFile, toCsv } from "@/lib/csv";
 import { importAssets, ApiError, type ImportAssetsResult } from "@/lib/api";
 import type { AssetInput, AssetStatus, AssetType } from "@/lib/types";
 
@@ -11,17 +11,17 @@ const STATUS_LABEL: Record<AssetStatus, string> = {
   in_repair: "In repair",
   retired: "Retired",
 };
-// Accepts either the raw stored value ("ready_to_deploy") or the label
-// shown everywhere else in the UI ("Ready to deploy") — a spreadsheet
-// someone fills in by hand is far more likely to have the latter.
+// รับได้ทั้งค่าดิบที่เก็บจริง ("ready_to_deploy") หรือ label ที่แสดงใน
+// หน้าจออื่นๆ ("Ready to deploy") — สเปรดชีตที่คนกรอกเองมักจะเป็นแบบหลัง
+// มากกว่า
 const STATUS_BY_LOOKUP: Record<string, AssetStatus> = Object.fromEntries([
   ...Object.entries(STATUS_LABEL).map(([value, label]) => [label.toLowerCase(), value as AssetStatus]),
   ...(Object.keys(STATUS_LABEL) as AssetStatus[]).map((v) => [v, v]),
 ]);
 
-// Maps a CSV header (lowercased, trimmed) to the AssetInput field it fills.
-// Several header spellings map to the same field — whatever an operator
-// naturally types into a spreadsheet column.
+// แม็ป header ของ CSV (lowercase, trim แล้ว) ไปยัง field ของ AssetInput
+// ที่จะเติมค่า header หลายแบบสะกดต่างกันแม็ปไปที่ field เดียวกัน
+// ครอบคลุมสิ่งที่ผู้ใช้มักพิมพ์ลงในหัวคอลัมน์สเปรดชีตตามธรรมชาติ
 const HEADER_MAP: Record<string, keyof (AssetInput & { assetTag?: string })> = {
   "asset tag": "assetTag",
   assettag: "assetTag",
@@ -33,6 +33,18 @@ const HEADER_MAP: Record<string, keyof (AssetInput & { assetTag?: string })> = {
   ordernumber: "orderNumber",
   "checked out to": "checkedOutTo",
   checkedoutto: "checkedOutTo",
+  // ทั้งสองคอลัมน์นี้มีอยู่ใน asset อยู่แล้ว (migrations/0012) แต่ไม่เคย
+  // เชื่อมเข้ากับการนำเข้า CSV จนกระทั่งตอนนี้ ตั้งใจไม่ resolve กับ
+  // directory พนักงานตรงนี้ — การจับคู่ชื่อเป็นชุดใหญ่แบบไม่มีคนตรวจสอบ
+  // คือรูปแบบความผิดพลาดที่ฟีเจอร์นี้พยายามเลี่ยงในจุดอื่นๆ อยู่แล้ว (ดู
+  // doc comment "no automatic backfill" ใน migrations/0030) แถวที่นำเข้า
+  // จะเก็บเป็น free text ไปก่อน แล้วไปเชื่อมทีละรายการจากหน้ารายละเอียด
+  // พนักงานได้
+  email: "checkedOutToEmail",
+  "checked out to email": "checkedOutToEmail",
+  checkedoutemail: "checkedOutToEmail",
+  department: "checkedOutToDepartment",
+  "checked out to department": "checkedOutToDepartment",
   "checkout date": "checkoutDate",
   "expected checkin date": "expectedCheckinDate",
   "expected check-in date": "expectedCheckinDate",
@@ -61,6 +73,8 @@ const TEMPLATE_HEADERS = [
   "Serial Number",
   "Order Number",
   "Checked Out To",
+  "Email",
+  "Department",
   "Checkout Date",
   "Expected Checkin Date",
   "EOL Date",
@@ -77,6 +91,8 @@ const TEMPLATE_EXAMPLE_ROW = [
   "Latitude 5440",
   "SN12345",
   "PO-2026-001",
+  "",
+  "",
   "",
   "",
   "",
@@ -103,7 +119,7 @@ function parseAssetsCsv(text: string): ParseOutcome {
   const ignoredHeaders = headerRow.filter((_, i) => !fieldByColumn[i]);
 
   const rows: ParsedRow[] = table.slice(1).map((cells, i) => {
-    const row: ParsedRow = { _rowNumber: i + 2 }; // +2: 1-indexed, plus the header row itself
+    const row: ParsedRow = { _rowNumber: i + 2 }; // +2: เริ่มนับที่ 1 บวกด้วยแถว header เอง
     cells.forEach((raw, colIndex) => {
       const field = fieldByColumn[colIndex];
       const value = raw.trim();
@@ -141,10 +157,10 @@ interface ImportAssetsModalProps {
 }
 
 /**
- * Load → preview → confirm bulk import for the Asset Registry. Parsing
- * happens entirely client-side (see lib/csv.ts) so the operator sees
- * exactly what's about to be sent before anything touches the server —
- * POST /api/assets/import only ever runs once "Confirm import" is clicked.
+ * โหลด → ดูตัวอย่าง → ยืนยัน สำหรับนำเข้าข้อมูล Asset Registry เป็นชุด
+ * parse ข้อมูลทั้งหมดทำฝั่ง client (ดู lib/csv.ts) เพื่อให้ผู้ใช้เห็น
+ * ชัดเจนว่ากำลังจะส่งอะไรไปก่อนที่จะแตะเซิร์ฟเวอร์จริง — POST
+ * /api/assets/import จะถูกเรียกก็ต่อเมื่อกด "Confirm import" เท่านั้น
  */
 export function ImportAssetsModal({ onClose, onImported }: ImportAssetsModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -161,8 +177,7 @@ export function ImportAssetsModal({ onClose, onImported }: ImportAssetsModalProp
     setFileName(file.name);
     setParseError(null);
     setResults(null);
-    file
-      .text()
+    readCsvFile(file)
       .then((text) => {
         const outcome = parseAssetsCsv(text);
         if (outcome.rows.length === 0) {

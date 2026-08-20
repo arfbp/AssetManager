@@ -1,38 +1,37 @@
-// Resolves a natural-language "scope" (e.g. "accounting-group", "Admin-01")
-// to a concrete list of agent IDs. Named, multi-device GROUPS are still a
-// local, static lookup loaded once at startup from an operator-edited JSON
-// file — the LLM parser (llm/actionParser.ts) can never invent a group name
-// that reaches more than what an operator explicitly configured there.
+// แปลง "scope" ภาษาธรรมชาติ (เช่น "accounting-group", "Admin-01") ให้เป็น
+// list ของ agent ID ที่ชัดเจน กลุ่มอุปกรณ์หลายเครื่องที่ตั้งชื่อไว้ (GROUPS)
+// ยังคงเป็น lookup แบบ static ในเครื่อง โหลดครั้งเดียวตอน startup จากไฟล์
+// JSON ที่ผู้ควบคุมแก้เอง — LLM parser (llm/actionParser.ts) ไม่มีทางกุชื่อ
+// กลุ่มขึ้นมาแล้วเข้าถึงได้เกินกว่าที่ผู้ควบคุมตั้งค่าไว้ชัดเจนในไฟล์นั้น
 //
-// A bare device name is different: it falls back to whatever's actually
-// connected right now (see getLiveAgentIds), so a newly-deployed real
-// machine is targetable by its own hostname immediately, with no separate
-// per-device config-file edit required. This doesn't weaken the original
-// bound — the LLM still can't reach a device that was never authenticated
-// and connected to this exact server, it just no longer requires a manual
-// allowlist entry on top of that authentication, which was pure friction
-// (every single newly-deployed agent needing an extra manual step before
-// the AI console could address it, despite already being fully trusted for
-// every other command path this project has).
+// ชื่ออุปกรณ์เดี่ยว ๆ ต่างออกไป: จะ fallback ไปหาสิ่งที่เชื่อมต่ออยู่จริงตอนนี้
+// (ดู getLiveAgentIds) ทำให้เครื่องจริงที่เพิ่ง deploy ใหม่ระบุเป้าหมายด้วย
+// hostname ของตัวเองได้ทันที โดยไม่ต้องแก้ไฟล์ config แยกต่างหากทีละเครื่อง
+// วิธีนี้ไม่ได้ทำให้ขอบเขตเดิมอ่อนแอลง — LLM ยังคงเข้าถึงอุปกรณ์ที่ไม่เคยผ่าน
+// การยืนยันตัวตนและเชื่อมต่อกับ server ตัวนี้ไม่ได้อยู่ดี แค่ไม่ต้องมี allowlist
+// เพิ่มด้วยมืออีกชั้นบนการยืนยันตัวตนนั้น ซึ่งเดิมเป็นแค่ความไม่สะดวกเปล่า ๆ
+// (agent ที่เพิ่ง deploy ใหม่ทุกตัวต้องมีขั้นตอนเพิ่มด้วยมือก่อนที่ AI console
+// จะสั่งงานได้ ทั้งที่ถูกไว้ใจเต็มที่อยู่แล้วสำหรับ path คำสั่งอื่นทุกทางของ
+// โปรเจกต์นี้)
 import { readFileSync } from "node:fs";
 import { log } from "../logger.js";
 
 export class DeviceGroups {
-  // Configured groups are still one process-wide static file today — a
-  // known, deliberately deferred gap (see the multi-tenant migration plan's
-  // Phase 5/9): a group name an operator configured is visible/resolvable
-  // fleet-wide, not scoped per org. Low real-world impact for now (nothing
-  // customer-sensitive lives in a group name itself, and any org's actual
-  // dispatch still only ever reaches its OWN connected agents — see
-  // getLiveAgentIds below and ws/registry.ts's composite org+agentId keys,
-  // which independently stop a resolved-but-foreign agentId from ever
-  // receiving a command), but real enough to fix properly (per-org group
-  // storage) before this matters for an actual second paying customer.
+  // กลุ่มที่ตั้งค่าไว้ยังคงเป็นไฟล์ static ตัวเดียวใช้ร่วมกันทั้ง process ณ
+  // ตอนนี้ — เป็นช่องว่างที่รู้อยู่แล้วและตั้งใจเลื่อนแก้ไปก่อน (ดู Phase 5/9
+  // ของแผน multi-tenant migration): ชื่อกลุ่มที่ผู้ควบคุมตั้งค่าไว้จะมองเห็น/
+  // resolve ได้ทั้ง fleet ไม่ได้จำกัดขอบเขตตาม org ผลกระทบจริงตอนนี้ยังต่ำ
+  // (ไม่มีข้อมูลที่กระทบลูกค้าอยู่ในชื่อกลุ่มเอง และการ dispatch จริงของแต่ละ
+  // org ก็ยังไปถึงแค่ agent ที่เชื่อมต่ออยู่ของ org ตัวเองเท่านั้น — ดู
+  // getLiveAgentIds ด้านล่าง และ key แบบผสม org+agentId ของ ws/registry.ts
+  // ซึ่งช่วยป้องกันแยกต่างหากไม่ให้ agentId ที่ resolve ได้แต่เป็นของ org อื่น
+  // รับคำสั่งได้) แต่ก็จริงจังพอที่ควรแก้ให้ถูกต้อง (เก็บกลุ่มแยกตาม org)
+  // ก่อนที่เรื่องนี้จะกลายเป็นปัญหาจริงกับลูกค้าที่จ่ายเงินรายที่สอง
   private readonly groups: Map<string, string[]>;
-  // Unlike `groups`, this DOES need to be org-scoped — it reflects live,
-  // currently-connected devices (real hostnames), and the whole reason
-  // ws/registry.ts became org+agentId composite-keyed was so this couldn't
-  // resolve into another org's device by hostname collision.
+  // ต่างจาก `groups` ตัวนี้จำเป็นต้องจำกัดขอบเขตตาม org — เพราะสะท้อนอุปกรณ์
+  // ที่เชื่อมต่ออยู่จริงตอนนี้ (hostname จริง) และเหตุผลทั้งหมดที่
+  // ws/registry.ts เปลี่ยนมาใช้ key แบบผสม org+agentId ก็เพื่อไม่ให้ตรงนี้
+  // resolve ไปโดนอุปกรณ์ของ org อื่นเพราะ hostname ชนกัน
   private readonly getLiveAgentIds: (orgId: string) => string[];
 
   private constructor(groups: Map<string, string[]>, getLiveAgentIds: (orgId: string) => string[]) {
@@ -51,7 +50,7 @@ export class DeviceGroups {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const groups = new Map<string, string[]>();
     for (const [key, value] of Object.entries(parsed)) {
-      if (key.startsWith("_")) continue; // allow "_comment" style keys
+      if (key.startsWith("_")) continue; // อนุญาต key แบบ "_comment"
       if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) {
         throw new Error(`device groups: entry ${key} must be an array of agent ID strings`);
       }
@@ -63,10 +62,10 @@ export class DeviceGroups {
   }
 
   /**
-   * Resolves a scope string to agent IDs: a configured group name first,
-   * then (if no group matches) a live agent whose ID matches exactly —
-   * automatic, not requiring that device to also be listed as its own
-   * single-entry group in the config file.
+   * แปลง scope string ให้เป็น agent ID: เช็คชื่อกลุ่มที่ตั้งค่าไว้ก่อน ถ้าไม่
+   * มีกลุ่มไหนตรงจึงค่อยหา agent ที่เชื่อมต่ออยู่ตัวที่ ID ตรงกันเป๊ะ — เป็น
+   * ไปโดยอัตโนมัติ ไม่ต้องให้อุปกรณ์นั้นถูกลิสต์ไว้เป็นกลุ่มแบบมีสมาชิกคนเดียว
+   * ในไฟล์ config ด้วย
    */
   resolve(orgId: string, scope: string): string[] {
     const configured = this.groups.get(scope.toLowerCase());
@@ -82,9 +81,9 @@ export class DeviceGroups {
   }
 
   /**
-   * Configured group names plus every currently-connected agent's own ID —
-   * fed into the LLM's system prompt as "known scopes" so it recognizes a
-   * live device name it's never seen configured anywhere.
+   * ชื่อกลุ่มที่ตั้งค่าไว้ บวกกับ ID ของ agent ที่เชื่อมต่ออยู่ตอนนี้ทุกตัว —
+   * ส่งเข้า system prompt ของ LLM เป็น "known scopes" เพื่อให้จำชื่ออุปกรณ์
+   * จริงที่ไม่เคยเห็นถูกตั้งค่าไว้ที่ไหนเลยได้
    */
   listScopes(orgId: string): string[] {
     return [...new Set([...this.groups.keys(), ...this.getLiveAgentIds(orgId)])];

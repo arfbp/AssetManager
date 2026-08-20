@@ -1,23 +1,22 @@
-// Watches the registry's "update" event (fires on every heartbeat/telemetry
-// state change) for two edge-triggered transitions notifications care about:
-// a device going offline/coming back online, and telemetry entering/leaving
-// alert mode (CPU/RAM over threshold). Both are diffed against
-// previously-seen state kept here, not derived from a single snapshot —
-// "update" fires on *every* heartbeat regardless of whether anything
-// actually changed, so without this a device sitting in alert mode would
-// re-notify on every single poll instead of once per transition.
+// คอยดู event "update" ของ registry (fire ทุกครั้งที่ heartbeat/telemetry
+// เปลี่ยนสถานะ) เพื่อจับ edge-triggered transition สองแบบที่ระบบแจ้งเตือน
+// สนใจ: อุปกรณ์ offline/กลับมา online และ telemetry เข้า/ออกจาก alert mode
+// (CPU/RAM เกิน threshold) ทั้งสองแบบ diff กับสถานะที่เคยเห็นล่าสุดที่เก็บไว้
+// ที่นี่ ไม่ได้ derive จาก snapshot เดียว — "update" fire ทุก heartbeat ไม่ว่า
+// จะมีอะไรเปลี่ยนจริงหรือไม่ ถ้าไม่มีส่วนนี้ อุปกรณ์ที่ค้างอยู่ใน alert mode
+// จะแจ้งเตือนซ้ำทุกรอบ poll แทนที่จะแจ้งแค่ครั้งเดียวตอนเปลี่ยนสถานะ
 import type { AgentRegistry, AgentSummary } from "../ws/registry.js";
 import { notifyAll } from "./dispatcher.js";
 import type { NotifyConfig } from "./types.js";
 
-// Keyed by "orgId:agentId", not bare agentId — agentId is just the
-// machine's OS hostname (e.g. "DESKTOP-001") and is NOT unique across
-// orgs (same reasoning as ws/registry.ts's mapKey and db/persistence.ts's
-// agentKey/incidentKey). Keying on agentId alone let one org's transition
-// mask or spuriously trigger another same-hostname org's notification —
-// e.g. Org A's DESKTOP-001 entering alert mode would make Org B's
-// DESKTOP-001 later entering alert mode look like no change at all,
-// silently dropping Org B's real notification.
+// คีย์ด้วย "orgId:agentId" ไม่ใช่ agentId เปล่าๆ — agentId เป็นแค่ OS hostname
+// ของเครื่อง (เช่น "DESKTOP-001") ซึ่งไม่ unique ข้าม org (เหตุผลเดียวกับ
+// mapKey ใน ws/registry.ts และ agentKey/incidentKey ใน db/persistence.ts)
+// ถ้าคีย์ด้วย agentId อย่างเดียว การเปลี่ยนสถานะของ org หนึ่งจะบัง หรือ
+// trigger การแจ้งเตือนของอีก org ที่มี hostname เดียวกันแบบผิดๆ ได้ — เช่น
+// DESKTOP-001 ของ Org A เข้า alert mode จะทำให้ DESKTOP-001 ของ Org B ที่เข้า
+// alert mode ทีหลังดูเหมือนไม่มีอะไรเปลี่ยนเลย ทำให้การแจ้งเตือนจริงของ
+// Org B หายไปแบบเงียบๆ
 function trackerKey(orgId: string, agentId: string): string {
   return `${orgId}:${agentId}`;
 }

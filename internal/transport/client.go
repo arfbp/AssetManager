@@ -19,28 +19,27 @@ type Config struct {
 	ClientCertPath string
 	ClientKeyPath  string
 	CACertPath     string
-	AuthToken      string // bearer-token fallback when mTLS certs aren't configured
+	AuthToken      string // bearer-token สำรองไว้ใช้เมื่อไม่ได้ config mTLS cert
 	AgentID        string
-	Version        string // reported in every heartbeat — see internal/version
-	ConfigHash     string // reported in every heartbeat — see internal/configpush
+	Version        string // รายงานทุกครั้งใน heartbeat — ดู internal/version
+	ConfigHash     string // รายงานทุกครั้งใน heartbeat — ดู internal/configpush
 }
 
-// CommandHandler executes an authenticated command and returns the result to
-// report back to the server. It must not block indefinitely — long-running
-// actions should report "accepted" immediately and do the work async if the
-// caller needs that pattern; this starter keeps handlers synchronous.
+// CommandHandler รันคำสั่งที่ authenticate แล้วและคืนผลลัพธ์ไปรายงานให้
+// server ต้องไม่ block ค้างไม่มีกำหนด — action ที่ใช้เวลานานควรรายงาน
+// "accepted" ทันทีแล้วทำงานแบบ async ถ้า caller ต้องการ pattern นั้น
+// ในเวอร์ชันเริ่มต้นนี้ handler ยังคงเป็นแบบ synchronous
 type CommandHandler func(ctx context.Context, cmd CommandPayload) CommandResultPayload
 
-// SelfUpdateHandler applies a self_update instruction — see
-// internal/selfupdate.Apply. Invoked in its own goroutine (see readLoop)
-// since it blocks on a download and must never stall command/telemetry
-// handling on the same connection.
+// SelfUpdateHandler ใช้คำสั่ง self_update — ดู internal/selfupdate.Apply
+// ถูกเรียกใน goroutine ของตัวเอง (ดู readLoop) เพราะมัน block รอ download
+// อยู่ และต้องไม่ทำให้การจัดการคำสั่ง/telemetry บน connection เดียวกันค้าง
 type SelfUpdateHandler func(ctx context.Context, payload SelfUpdatePayload)
 
-// ConfigUpdateHandler applies a config_update instruction — see
-// internal/configpush.Apply. Invoked in its own goroutine (see readLoop),
-// same reasoning as SelfUpdateHandler: it blocks on file I/O and a service
-// stop/start cycle and must never stall the connection's other handling.
+// ConfigUpdateHandler ใช้คำสั่ง config_update — ดู internal/configpush.Apply
+// ถูกเรียกใน goroutine ของตัวเอง (ดู readLoop) เหตุผลเดียวกับ
+// SelfUpdateHandler: มัน block รอ file I/O และรอบ stop/start ของ service
+// อยู่ และต้องไม่ทำให้การจัดการอื่นของ connection ค้าง
 type ConfigUpdateHandler func(ctx context.Context, payload ConfigUpdatePayload)
 
 type Client struct {
@@ -54,17 +53,17 @@ type Client struct {
 	startedAt time.Time
 }
 
-// SetSelfUpdateHandler wires the self-update apply step in from outside —
-// same late-binding reason as Executor.SetOutputSender/
-// SetStateChangeNotifier in cmd/agent/main.go: the handler needs values
-// (install paths, current version) that aren't available yet at
-// NewClient's own call site.
+// SetSelfUpdateHandler ต่อสายขั้นตอน apply ของ self-update จากภายนอก —
+// เหตุผลเรื่อง late-binding เดียวกับ
+// Executor.SetOutputSender/SetStateChangeNotifier ใน cmd/agent/main.go:
+// handler ต้องใช้ค่า (install path, เวอร์ชันปัจจุบัน) ที่ยังไม่มีอยู่ตอน
+// call site ของ NewClient เอง
 func (c *Client) SetSelfUpdateHandler(h SelfUpdateHandler) {
 	c.selfUpdateHandler = h
 }
 
-// SetConfigUpdateHandler wires the config-push apply step in from outside —
-// same late-binding reason as SetSelfUpdateHandler.
+// SetConfigUpdateHandler ต่อสายขั้นตอน apply ของ config-push จากภายนอก —
+// เหตุผลเรื่อง late-binding เดียวกับ SetSelfUpdateHandler
 func (c *Client) SetConfigUpdateHandler(h ConfigUpdateHandler) {
 	c.configUpdateHandler = h
 }
@@ -79,9 +78,9 @@ func NewClient(cfg Config, log zerolog.Logger, handler CommandHandler) *Client {
 	}
 }
 
-// Run maintains the connection for the lifetime of ctx, reconnecting with
-// exponential backoff (capped) on any failure. It never returns until ctx is
-// cancelled, so callers should invoke it in its own goroutine.
+// Run ดูแล connection ไว้ตลอดอายุของ ctx โดย reconnect ด้วย exponential
+// backoff (มี cap) เมื่อล้มเหลว จะไม่ return จนกว่า ctx จะถูก cancel ดังนั้น
+// caller ควรเรียกมันใน goroutine ของตัวเอง
 func (c *Client) Run(ctx context.Context) {
 	backoff := time.Second
 	const maxBackoff = 60 * time.Second
@@ -109,24 +108,24 @@ func (c *Client) Run(ctx context.Context) {
 	}
 }
 
-// SendTelemetry enqueues a snapshot for transmission. Non-blocking: if the
-// outbound buffer is full (server unreachable), the oldest pattern is to
-// drop rather than let memory grow unbounded on a low-resource agent.
+// SendTelemetry ใส่ snapshot เข้าคิวเพื่อส่งออกไป Non-blocking: ถ้า
+// outbound buffer เต็ม (ติดต่อ server ไม่ได้) จะ drop message เก่าสุดแทนที่
+// จะปล่อยให้หน่วยความจำโตไม่มีขอบเขตบน agent ที่มี resource จำกัด
 func (c *Client) SendTelemetry(payload TelemetryPayload) {
 	c.enqueue(TypeTelemetry, payload)
 }
 
-// SendAlert enqueues a self-healing engine event for transmission — same
-// non-blocking, drop-on-full-buffer behavior as SendTelemetry.
+// SendAlert ใส่ event จาก self-healing engine เข้าคิวเพื่อส่งออกไป —
+// พฤติกรรม non-blocking, drop-on-full-buffer เดียวกับ SendTelemetry
 func (c *Client) SendAlert(payload AlertPayload) {
 	c.enqueue(TypeAlert, payload)
 }
 
-// SendCommandOutput enqueues one incremental chunk of a long-running
-// command's output — see CommandOutputPayload. Same non-blocking,
-// drop-on-full-buffer behavior as the other Send* methods; losing one
-// output line under extreme backpressure is an acceptable degradation, the
-// same tradeoff already made for telemetry/alerts.
+// SendCommandOutput ใส่ output ของคำสั่งที่รันนานทีละ chunk เข้าคิว — ดู
+// CommandOutputPayload พฤติกรรม non-blocking, drop-on-full-buffer เดียวกับ
+// Send* method อื่น ๆ; การเสีย output หนึ่งบรรทัดตอน backpressure สูงมาก
+// เป็นการลดคุณภาพที่ยอมรับได้ tradeoff เดียวกับที่ทำไว้แล้วสำหรับ
+// telemetry/alert
 func (c *Client) SendCommandOutput(payload CommandOutputPayload) {
 	c.enqueue(TypeCommandOutput, payload)
 }
@@ -190,11 +189,11 @@ func (c *Client) runConnection(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		// The close-message write happens inside writeLoop, not here —
-		// gorilla/websocket allows at most one concurrent writer per
-		// connection, and writeLoop's goroutine already writes to this same
-		// conn. Wait (bounded) for it to finish that write before returning,
-		// so the deferred conn.Close() above doesn't race it.
+		// การเขียน close-message เกิดขึ้นข้างใน writeLoop ไม่ใช่ตรงนี้ —
+		// gorilla/websocket อนุญาตให้มี writer พร้อมกันได้มากสุดตัวเดียวต่อ
+		// connection และ goroutine ของ writeLoop ก็เขียนลง conn เดียวกันนี้
+		// อยู่แล้ว รอ (มี bound) ให้มันเขียนเสร็จก่อน return เพื่อไม่ให้
+		// conn.Close() ที่ defer ไว้ด้านบน race กับมัน
 		select {
 		case <-writeLoopDone:
 		case <-time.After(2 * time.Second):
@@ -231,20 +230,19 @@ func (c *Client) buildTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// readLoop takes two contexts, deliberately not one: connCtx governs the
-// read loop itself (it must stop the instant this connection ends), while
-// execCtx — the whole-agent-lifetime context from Client.Run, never
-// recreated per-connection — is what every dispatched command/self_update/
-// config_update actually runs under. A run_script install can legitimately
-// take minutes; tying its exec.CommandContext to connCtx meant a transient
-// reconnect (a Wi-Fi blip, the server restarting) cancelled connCtx, which
-// killed the in-flight installer process via SIGKILL/TerminateProcess mid-
-// install — verified on real hardware as the actual cause of several
-// installs that silently died with a bare "exit status 1" partway through,
-// not a bug in the script or the installer itself. A dropped connection is
-// a transport hiccup; work already committed to a device should survive it,
-// bounded only by the command's own timeout (ScriptTimeout, etc.), not by
-// how long this particular TCP connection happens to stay up.
+// readLoop รับสอง context ตั้งใจไม่ใช้ตัวเดียว: connCtx คุม read loop เอง
+// (ต้องหยุดทันทีที่ connection นี้จบ) ส่วน execCtx — context ที่มีอายุตลอด
+// การรันของ agent ทั้งตัวจาก Client.Run ไม่เคยถูกสร้างใหม่ต่อ connection —
+// คือสิ่งที่ command/self_update/config_update ทุกตัวที่ถูก dispatch รัน
+// อยู่ภายใต้จริง ๆ การติดตั้งด้วย run_script ใช้เวลาหลายนาทีได้จริง ๆ; ถ้า
+// ผูก exec.CommandContext ของมันกับ connCtx ไว้ การ reconnect ชั่วคราว
+// (Wi-Fi สะดุด, server restart) จะ cancel connCtx ซึ่งไป kill process
+// installer ที่กำลังรันอยู่ผ่าน SIGKILL/TerminateProcess กลางคัน — ยืนยัน
+// แล้วบนเครื่องจริงว่าเป็นสาเหตุจริงของการติดตั้งหลายครั้งที่ตายเงียบ ๆ
+// กลางคันด้วย "exit status 1" เฉย ๆ ไม่ใช่บั๊กในสคริปต์หรือตัวติดตั้งเอง
+// connection ที่หลุดเป็นแค่การสะดุดของ transport; งานที่ commit ไปแล้วกับ
+// เครื่องควรรอดจากมันได้ โดยถูกจำกัดแค่ด้วย timeout ของคำสั่งเอง
+// (ScriptTimeout ฯลฯ) ไม่ใช่ด้วยว่า TCP connection ตัวนี้จะอยู่นานแค่ไหน
 func (c *Client) readLoop(connCtx, execCtx context.Context, conn *websocket.Conn, errCh chan<- error) {
 	for {
 		_, raw, err := conn.ReadMessage()
@@ -277,9 +275,9 @@ func (c *Client) readLoop(connCtx, execCtx context.Context, conn *websocket.Conn
 				continue
 			}
 			if c.selfUpdateHandler != nil {
-				// Own goroutine: this blocks on a download (up to the 2-minute
-				// timeout in selfupdate.download), which must never stall the
-				// same connection's command/telemetry handling.
+				// goroutine ของตัวเอง: ตรงนี้ block รอ download อยู่ (นานได้
+				// ถึง timeout 2 นาทีใน selfupdate.download) ซึ่งต้องไม่ทำให้
+				// การจัดการคำสั่ง/telemetry ของ connection เดียวกันค้าง
 				go c.selfUpdateHandler(execCtx, payload)
 			}
 		case TypeConfigUpdate:

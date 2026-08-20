@@ -9,8 +9,8 @@ import { FleetStats } from "@/components/endpoints/FleetStats";
 import { StatusBadge } from "@/components/status/StatusBadge";
 import { useDashboardSocket } from "@/hooks/useDashboardSocket";
 import { formatRelativeTime } from "@/lib/format";
-import { getFleetIncidentSummary, getFleetLocations } from "@/lib/api";
-import type { AgentSummary, HistoryEntry, HistoryEntryStatus, IncidentSummaryEntry, DeviceLocationEntry } from "@/lib/types";
+import { getFleetIncidentSummary, getFleetLocations, getErpAlerts } from "@/lib/api";
+import type { AgentSummary, HistoryEntry, HistoryEntryStatus, IncidentSummaryEntry, DeviceLocationEntry, ErpAlerts } from "@/lib/types";
 
 const LiveMap = dynamic(() => import("@/components/tracking/LiveMap").then((m) => m.LiveMap), { ssr: false });
 
@@ -27,13 +27,12 @@ interface AttentionEntry {
   incidentCount?: number;
 }
 
-// Alert mode (a live CPU/RAM threshold crossing) and incidents (a specific
-// process going unresponsive) are genuinely different signals — a single
-// hung process doesn't necessarily push the machine's overall CPU/RAM over
-// threshold. Merging both (plus offline) into one map instead of letting
-// either hide the other; has to start from the union of `agents` and
-// `incidentSummary`, not just `agents.filter(...)`, because a device can
-// have logged incidents while no longer being in the live registry at all.
+// alert mode (CPU/RAM เกิน threshold แบบ real-time) กับ incidents (process
+// ค้างไม่ตอบสนอง) เป็นคนละสัญญาณกันจริง ๆ — process ค้างตัวเดียวไม่ได้แปลว่า
+// CPU/RAM รวมของเครื่องจะเกิน threshold เสมอไป เลยต้อง merge ทั้งสอง (บวก
+// offline) เข้า map เดียวกันแทนที่จะให้ตัวใดตัวหนึ่งบัง ต้องเริ่มจาก union
+// ของ `agents` กับ `incidentSummary` ไม่ใช่แค่ `agents.filter(...)` เพราะ
+// device อาจมี incident ที่เคย log ไว้ทั้งที่ตอนนี้ไม่อยู่ใน live registry แล้ว
 function buildAttention(agents: AgentSummary[], incidentSummary: IncidentSummaryEntry[] | null): Map<string, AttentionEntry> {
   const byAgent = new Map<string, AttentionEntry>();
   for (const a of agents) {
@@ -190,11 +189,23 @@ function Dashboard({ username }: { username: string }) {
   const { agents, history, connectionStatus } = useDashboardSocket();
   const [incidentSummary, setIncidentSummary] = useState<IncidentSummaryEntry[] | null>(null);
   const [locations, setLocations] = useState<DeviceLocationEntry[] | null>(null);
+  const [erpAlerts, setErpAlerts] = useState<ErpAlerts | null>(null);
 
   useEffect(() => {
     getFleetIncidentSummary(INCIDENT_SUMMARY_WINDOW_DAYS, 10)
       .then((res) => setIncidentSummary(res.devices))
       .catch(() => setIncidentSummary([]));
+  }, []);
+
+  // เป็น "needs attention" อีกชุดเหมือน buildAttention ด้านบน แต่ key ด้วย
+  // asset tag แทน agentId — รายการ warranty/maintenance ไม่จำเป็นต้องมี
+  // device เชื่อมอยู่เสมอไป (เช่น peripheral หรือ asset ที่ยังเป็น
+  // "ready_to_deploy") เลย track แยกไว้แล้วรวมเข้ากับตัวนับ bell-badge
+  // แทนที่จะยัดเข้า device map
+  useEffect(() => {
+    getErpAlerts(30)
+      .then(setErpAlerts)
+      .catch(() => setErpAlerts({ expiringWarranties: [], upcomingMaintenance: [], expiringLicenses: [] }));
   }, []);
 
   useEffect(() => {
@@ -205,6 +216,7 @@ function Dashboard({ username }: { username: string }) {
 
   const attention = buildAttention(agents, incidentSummary);
   const attentionCount = attention.size;
+  const erpAlertCount = erpAlerts ? erpAlerts.expiringWarranties.length + erpAlerts.upcomingMaintenance.length + erpAlerts.expiringLicenses.length : 0;
   const located = (locations ?? []).filter((d) => d.lat !== null && d.lon !== null);
 
   const onlineWithTelemetry = agents.filter((a) => a.status === "online" && a.lastTelemetry);
@@ -220,7 +232,7 @@ function Dashboard({ username }: { username: string }) {
   return (
     <AppShell
       username={username}
-      notificationCount={attentionCount}
+      notificationCount={attentionCount + erpAlertCount}
       connectionStatus={connectionStatus}
       statusSlot={
         <StatusBadge
@@ -326,7 +338,7 @@ function Dashboard({ username }: { username: string }) {
             <span className="material-symbols-outlined text-status-good">auto_awesome</span>
             <h3 className="text-headline-sm font-semibold text-ink-primary">AI insights &amp; recommendations</h3>
           </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
             <InsightCard
               icon="build_circle"
               tone="good"
@@ -362,6 +374,18 @@ function Dashboard({ username }: { username: string }) {
               }
               actionLabel="Review devices"
               actionHref="/devices"
+            />
+            <InsightCard
+              icon="event_upcoming"
+              tone={erpAlertCount > 0 ? "critical" : "good"}
+              title="Asset management"
+              body={
+                erpAlertCount > 0
+                  ? `${erpAlerts!.expiringWarranties.length} warrant${erpAlerts!.expiringWarranties.length === 1 ? "y" : "ies"} expiring, ${erpAlerts!.upcomingMaintenance.length} maintenance item(s) due, and ${erpAlerts!.expiringLicenses.length} license(s) expiring in the next 30 days.`
+                  : "No warranties expiring or maintenance due in the next 30 days."
+              }
+              actionLabel="Review maintenance"
+              actionHref="/maintenance"
             />
           </div>
         </div>

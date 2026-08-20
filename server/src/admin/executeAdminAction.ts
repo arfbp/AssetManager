@@ -1,14 +1,13 @@
-// Confirm-time executor for admin actions resolved by security/adminGuardrail.ts
-// — called from POST /api/command/:id/confirm once a human has reviewed and
-// confirmed a suspend/reactivate/delete on an organization or user. Calls
-// the real store functions directly (never registry.sendCommand/WS — there
-// is no device involved in any of these), the exact same functions the
-// dashboard's own Organizations/Users pages call, so an AI-console-
-// triggered action is indistinguishable from a dashboard-triggered one in
-// every downstream effect (DB state, audit trail, credential-cache reload).
-// create_organization/create_user/generate_installer never reach here —
-// the first two resolve to "admin_form" (a human completes the real form),
-// the last resolves to "allowed" and is answered directly in routes.ts.
+// executor ตอน confirm สำหรับ admin action ที่ผ่านการ resolve จาก
+// security/adminGuardrail.ts มาแล้ว — ถูกเรียกจาก POST /api/command/:id/confirm
+// หลังจากมนุษย์ตรวจสอบและยืนยัน suspend/reactivate/delete ขององค์กรหรือผู้ใช้
+// เรียก store function จริงตรง ๆ (ไม่ผ่าน registry.sendCommand/WS เพราะ action
+// พวกนี้ไม่มี device เกี่ยวข้อง) เป็นฟังก์ชันชุดเดียวกับที่หน้า Organizations/Users
+// ของ dashboard เรียกใช้ ดังนั้น action ที่สั่งผ่าน AI console จะให้ผลลัพธ์
+// เหมือนกับสั่งผ่าน dashboard ทุกประการ (สถานะใน DB, audit trail, การ reload
+// credential cache) ส่วน create_organization/create_user/generate_installer
+// ไม่มีทางมาถึงจุดนี้ — สองตัวแรก resolve เป็น "admin_form" (ให้มนุษย์กรอกฟอร์มจริง)
+// ส่วนตัวสุดท้าย resolve เป็น "allowed" และตอบกลับตรงใน routes.ts เลย
 import type { Pool } from "pg";
 import { setOrgStatus, deleteOrganization } from "../orgs/orgsStore.js";
 import { setUserStatus, deleteUser } from "../auth/users.js";

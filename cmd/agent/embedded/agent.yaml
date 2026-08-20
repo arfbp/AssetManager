@@ -1,7 +1,7 @@
-# OptiFleet AI Agent configuration - LAN test deployment.
-# Points at the central server running on 192.168.10.196 (this dev machine).
-# ca_cert_path trusts optifleet-cert.pem shipped alongside this file - that
-# cert is self-signed for LAN testing only, not a real CA-issued certificate.
+# การตั้งค่า OptiFleet AI Agent - deploy สำหรับทดสอบใน LAN
+# ชี้ไปที่ central server ที่รันบน 192.168.10.196 (เครื่อง dev เครื่องนี้)
+# ca_cert_path เชื่อถือ optifleet-cert.pem ที่แนบมากับไฟล์นี้ - cert นั้น
+# เป็น self-signed สำหรับทดสอบใน LAN เท่านั้น ไม่ใช่ certificate จาก CA จริง
 
 service:
   name: OptiFleetAIAgent
@@ -31,7 +31,7 @@ logging:
   max_age_days: 30
 
 commands:
-  # run_script intentionally NOT enabled - see server/README.md before adding it.
+  # run_script ตั้งใจไม่เปิดใช้งาน - ดู server/README.md ก่อนจะเพิ่มเข้าไป
   allowed:
     - kill_process
     - clean_temp

@@ -11,15 +11,14 @@ function applyTheme(theme: Theme | null): void {
   if (theme) {
     root.setAttribute("data-theme", theme);
   } else {
-    root.removeAttribute("data-theme"); // follow OS preference
+    root.removeAttribute("data-theme"); // ตามค่าที่ตั้งไว้ใน OS
   }
 }
 
 /**
- * Explicit light/dark toggle, separate from (and overriding) the OS
- * preference — per the dataviz skill, dark mode is a *selected* state, not
- * an automatic-only flip. `null` means "follow the system," which is the
- * default until the operator picks one.
+ * สวิตช์ light/dark แบบเลือกเองชัดเจน แยกจาก (และ override) ค่าที่ตั้งไว้
+ * ใน OS — dark mode ต้องเป็นสถานะที่ *เลือกเอง* ได้ ไม่ใช่สลับอัตโนมัติ
+ * อย่างเดียว `null` แปลว่า "ตามระบบ" ซึ่งเป็นค่า default จนกว่าผู้ใช้จะเลือกเอง
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);
@@ -33,7 +32,7 @@ export function ThemeToggle() {
   }, []);
 
   function cycle(): void {
-    // light -> dark -> follow system -> light -> …
+    // light -> dark -> ตามระบบ -> light -> …
     const next: Theme | null = theme === "light" ? "dark" : theme === "dark" ? null : "light";
     setTheme(next);
     applyTheme(next);
@@ -42,8 +41,8 @@ export function ThemeToggle() {
   }
 
   if (!mounted) {
-    // Avoid a hydration flash: render a stable placeholder until we know
-    // the stored preference.
+    // กัน hydration กะพริบ: render placeholder ที่ค่าคงที่ไว้ก่อน จนกว่า
+    // จะรู้ค่าที่เคยตั้งไว้จริง
     return <div className="h-8 w-8" aria-hidden="true" />;
   }
 

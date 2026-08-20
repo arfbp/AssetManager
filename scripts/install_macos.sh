@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Builds and installs the OptiFleet AI Agent as a launchd daemon.
-# Must be run with sudo. The daemon is registered under its normal label and
-# IS visible via `launchctl list` / Activity Monitor — this script does not
-# attempt to hide it.
+# Build และติดตั้ง OptiFleet AI Agent เป็น launchd daemon
+# ต้องรันด้วย sudo daemon จะถูกลงทะเบียนภายใต้ label ปกติและมองเห็นได้ผ่าน
+# `launchctl list` / Activity Monitor — สคริปต์นี้ไม่ได้พยายามซ่อนมัน
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then

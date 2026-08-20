@@ -1,10 +1,10 @@
-// The single choke point every parsed natural-language command passes
-// through before it can become a signed CommandPayload sent to an agent.
-// Nothing here trusts the LLM's output as an authorization decision —
-// scope resolution is a local config lookup (deviceGroups.ts), action
-// semantics are re-derived from a fixed switch (not copied from the model),
-// and content that reaches an agent as executable text is blacklist-scanned
-// even when it comes from a pre-vetted template.
+// จุดตรวจจุดเดียวที่ natural-language command ทุกตัวที่ parse มาแล้วต้องผ่าน
+// ก่อนจะกลายเป็น signed CommandPayload ที่ส่งไปยัง agent ตรงนี้ไม่มีอะไรเชื่อ
+// ผลลัพธ์ของ LLM เป็น authorization decision เลย — การ resolve scope คือการ
+// lookup config ในเครื่อง (deviceGroups.ts) semantics ของ action ถูก
+// re-derive จาก switch ที่ตายตัว (ไม่ได้ copy มาจาก model) และเนื้อหาที่จะ
+// ไปถึง agent ในรูปแบบข้อความที่รันได้จะถูก blacklist-scan เสมอ แม้จะมาจาก
+// template ที่ตรวจสอบไว้ล่วงหน้าแล้วก็ตาม
 import { audit } from "../logger.js";
 import type { DeviceGroups } from "../groups/deviceGroups.js";
 import { lookupUninstallTemplate } from "../llm/uninstallTemplates.js";
@@ -25,9 +25,9 @@ export type GuardrailVerdict =
 export interface GuardrailContext {
   orgId: string;
   deviceGroups: DeviceGroups;
-  /** Mirrors the agent's own OPTIFLEET_ENABLE_RUN_SCRIPT gate — the server has an independent copy of this decision. */
+  /** สะท้อนตาม gate OPTIFLEET_ENABLE_RUN_SCRIPT ของฝั่ง agent เอง — เซิร์ฟเวอร์เก็บสำเนาการตัดสินใจนี้ไว้อีกชุดแยกต่างหาก */
   enableRunScriptDispatch: boolean;
-  /** Resolved target count at or above this forces human confirmation for destructive actions, regardless of the LLM's confirm signal. */
+  /** จำนวน target ที่ resolve ได้ถ้าถึงหรือเกินค่านี้ บังคับให้ต้องยืนยันจากมนุษย์สำหรับ action ที่เป็น destructive ไม่ว่าสัญญาณ confirm ของ LLM จะเป็นอย่างไร */
   massActionThreshold: number;
 }
 
@@ -63,24 +63,23 @@ export function evaluateParsedIntent(parsed: ParsedIntent, ctx: GuardrailContext
     parsed.action === "restart_host" || parsed.action === "shutdown_host" || parsed.action === "uninstall_software";
   const isKillProcess = parsed.action === "kill_process";
 
-  // restart_host / shutdown_host / uninstall_software: ALWAYS requires human
-  // confirmation, full stop — parsed.confirm is never enough on its own to skip it, no
-  // matter how the request was phrased or how confident the model was.
-  // This used to allow skipping confirmation when the model reported
-  // confirm=true on a single-device target, on the theory that sufficiently
-  // explicit operator wording ("restart it now, confirmed") shouldn't need
-  // a redundant second click. In practice, the model is not reliable enough
-  // for that: verified live, the exact same bare, non-explicit text
-  // ("restart", nothing else) got parsed.confirm=false for one device and
-  // parsed.confirm=true for another in back-to-back calls, and the latter
-  // dispatched a real reboot with no human ever confirming anything. A
-  // reboot closes every running program on a real machine — the cost of one
-  // extra click for the rare case where the operator really did mean to
-  // skip confirmation is far lower than the cost of trusting this field.
-  // kill_process: lower stakes (recoverable, scoped to one process) — only
-  // escalates to confirmation when it's a mass action across many devices.
-  // clean_temp: never needs confirmation — already tightly bounded by the
-  // directory allowlist on the agent side.
+  // restart_host / shutdown_host / uninstall_software: ต้องการการยืนยันจาก
+  // มนุษย์เสมอ ไม่มีข้อยกเว้น — parsed.confirm เพียงอย่างเดียวไม่เคยพอที่จะ
+  // ข้ามขั้นตอนนี้ได้ ไม่ว่า request จะเขียนมาอย่างไรหรือ model จะมั่นใจแค่ไหน
+  // เดิมทีระบบนี้เคยยอมให้ข้ามการยืนยันได้เมื่อ model รายงาน confirm=true
+  // สำหรับ target เดียว โดยคิดว่าถ้อยคำของ operator ที่ชัดเจนพอ ("restart it
+  // now, confirmed") ไม่ควรต้องคลิกซ้ำอีกครั้งโดยไม่จำเป็น แต่ในทางปฏิบัติ
+  // model ไม่น่าเชื่อถือพอสำหรับเรื่องนี้: ยืนยันจากของจริงแล้วว่าข้อความ
+  // เปล่าๆ ที่ไม่ชัดเจนแบบเดียวกันเป๊ะ ("restart" เฉยๆ ไม่มีอะไรอื่น) ได้
+  // parsed.confirm=false สำหรับอุปกรณ์หนึ่ง และ parsed.confirm=true สำหรับ
+  // อีกอุปกรณ์ในการเรียกติดต่อกัน และตัวหลัง dispatch การ reboot จริงโดยไม่
+  // มีมนุษย์คนไหนยืนยันอะไรเลย การ reboot จะปิดทุกโปรแกรมที่กำลังรันอยู่บน
+  // เครื่องจริง — ค่าใช้จ่ายของการคลิกเพิ่มอีกครั้งสำหรับกรณีหายากที่
+  // operator ตั้งใจข้ามการยืนยันจริงๆ นั้นถูกกว่าค่าใช้จ่ายของการเชื่อ field
+  // นี้มาก kill_process: เดิมพันต่ำกว่า (กู้คืนได้ จำกัดแค่ process เดียว) —
+  // จะยกระดับไปเป็นต้องยืนยันก็ต่อเมื่อเป็น mass action ข้ามหลายอุปกรณ์
+  // เท่านั้น clean_temp: ไม่ต้องการการยืนยันเลย เพราะถูกจำกัดขอบเขตด้วย
+  // directory allowlist ที่ฝั่ง agent อยู่แล้วอย่างเข้มงวด
   let needsConfirmation = false;
   const reasons: string[] = [];
   if (isDestructiveTier) {
@@ -123,15 +122,14 @@ function resolveAction(
     }
 
     case "restart_host": {
-      // Independent check, not just prompt-engineering: restart_host reboots
-      // the entire machine, closing every running program, not just one. A
-      // non-empty target here means the model extracted something to act on
-      // beyond the device itself — almost always a specific program name
-      // from a request like "restart <app>", which is a kill_process request
-      // misclassified as a full reboot. This has happened in practice (a
-      // request to restart one app rebooted the whole machine instead), so
-      // this is blocked outright rather than trusted, regardless of what the
-      // model's own reasoning says.
+      // เป็นการเช็คแยกอิสระ ไม่ใช่แค่ prompt-engineering: restart_host reboot
+      // ทั้งเครื่อง ปิดทุกโปรแกรมที่กำลังรันอยู่ ไม่ใช่แค่โปรแกรมเดียว target
+      // ที่ไม่ว่างเปล่าตรงนี้แปลว่า model ดึงบางอย่างมาให้ action นอกเหนือไป
+      // จากตัวอุปกรณ์เอง — เกือบทุกครั้งเป็นชื่อโปรแกรมเจาะจงจาก request แบบ
+      // "restart <app>" ซึ่งจริงๆ เป็น kill_process request ที่ถูกจัด
+      // ประเภทผิดเป็น reboot เต็มรูปแบบ เคยเกิดขึ้นจริงมาแล้ว (request ให้
+      // restart แอปเดียวกลับ reboot ทั้งเครื่องแทน) จึงต้อง block ไว้เลย
+      // ไม่เชื่อ ไม่ว่า reasoning ของ model เองจะว่าอย่างไรก็ตาม
       if (target) {
         return {
           verdict: "blocked",
@@ -146,11 +144,11 @@ function resolveAction(
     }
 
     case "shutdown_host": {
-      // Same independent check as restart_host, and for the same reason:
-      // shutdown_host powers off the entire device (and leaves it off,
-      // unlike restart_host) — a named target here almost always means a
-      // program-close request ("shut down Chrome") got misclassified as a
-      // full power-off, so it's blocked outright rather than trusted.
+      // เช็คแยกอิสระแบบเดียวกับ restart_host และด้วยเหตุผลเดียวกัน:
+      // shutdown_host ปิดเครื่องทั้งเครื่อง (และปล่อยให้ปิดค้างไว้ ต่างจาก
+      // restart_host) — target ที่ระบุตรงนี้เกือบทุกครั้งแปลว่า request ปิด
+      // โปรแกรม ("shut down Chrome") ถูกจัดประเภทผิดเป็นการปิดเครื่องเต็ม
+      // รูปแบบ จึงต้อง block ไว้เลยไม่เชื่อ
       if (target) {
         return {
           verdict: "blocked",
@@ -165,11 +163,11 @@ function resolveAction(
     }
 
     case "run_script": {
-      // The model never authors run_script content under this schema — see
-      // schema.ts, target/scope are plain identifiers, not script text. A
-      // flow that genuinely needs to dispatch an admin-authored script
-      // requires a separate, explicit endpoint where a human supplies and
-      // reviews the script body — never something inferred from free text.
+      // Model ไม่เคยเขียนเนื้อหา run_script เองภายใต้ schema นี้ — ดู
+      // schema.ts, target/scope เป็นแค่ identifier ธรรมดา ไม่ใช่ตัว script
+      // flow ที่ต้องการ dispatch script ที่ admin เขียนเองจริงๆ ต้องมี
+      // endpoint แยกที่ชัดเจน ให้มนุษย์เป็นคนใส่และตรวจ script body เอง
+      // ไม่ใช่สิ่งที่ infer มาจาก free text เด็ดขาด
       return {
         verdict: "blocked",
         reason:
@@ -194,10 +192,10 @@ function resolveAction(
       }
       const hit = scanForBlacklistedContent(template.script);
       if (hit) {
-        // A vetted template matching the blacklist means the template was
-        // tampered with or miswritten — this is an internal integrity
-        // failure, not a normal "request rejected" outcome, so it's logged
-        // at error level distinctly from the ordinary blocked-request path.
+        // Template ที่ตรวจสอบแล้วแต่ดันไปตรงกับ blacklist แปลว่า template
+        // ถูกแก้ไข หรือเขียนผิดพลาด — นี่คือ internal integrity failure ไม่ใช่
+        // ผลลัพธ์ "request ถูกปฏิเสธ" แบบปกติ จึง log ที่ระดับ error แยกจาก
+        // path การ block request ตามปกติ
         audit.error({ target, hit }, "guardrail: vetted uninstall template matched the blacklist scan — treat as compromised");
         return { verdict: "blocked", reason: "Internal safety check failed for this uninstall template — contact an administrator." };
       }
@@ -230,18 +228,18 @@ function resolveAction(
     }
 
     case "unsupported": {
-      // Unreachable in practice — evaluateParsedIntent already returns
-      // before calling resolveAction for this case. Handled here only so
-      // the switch stays exhaustively typed against ParsedIntent.action.
+      // ในทางปฏิบัติ unreachable — evaluateParsedIntent return ไปแล้วก่อนจะ
+      // เรียก resolveAction สำหรับ case นี้ จัดการไว้ตรงนี้แค่เพื่อให้
+      // switch ยังคง type แบบ exhaustive เทียบกับ ParsedIntent.action
       return { verdict: "blocked", reason: "unsupported action" };
     }
 
     case "query_info": {
-      // Unreachable in practice — routes.ts intercepts query_info before
-      // evaluateParsedIntent is ever called (see schema.ts's doc comment on
-      // PARSEABLE_ACTIONS). Handled here only for exhaustive typing; if this
-      // ever *does* fire it means that short-circuit broke, so fail closed
-      // with a clear reason rather than silently resolving to a no-op dispatch.
+      // ในทางปฏิบัติ unreachable — routes.ts ดัก query_info ไว้ก่อนที่จะ
+      // เรียก evaluateParsedIntent เลย (ดู doc comment ของ PARSEABLE_ACTIONS
+      // ใน schema.ts) จัดการไว้ตรงนี้แค่เพื่อ typing แบบ exhaustive ถ้ามัน
+      // เกิดขึ้นจริง แปลว่า short-circuit นั้นพังไปแล้ว จึง fail closed ด้วย
+      // เหตุผลที่ชัดเจน แทนที่จะ resolve ไปเป็น no-op dispatch แบบเงียบๆ
       return { verdict: "blocked", reason: "query_info must be answered before reaching the guardrail, never dispatched" };
     }
 

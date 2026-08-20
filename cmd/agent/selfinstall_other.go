@@ -1,9 +1,10 @@
 //go:build !windows
 
-// The single-file self-install flow (selfinstall_windows.go) is Windows-only
-// — macOS deployment still goes through dist-agent-deploy-macos/install.sh.
-// These stubs just mean shouldSelfInstall never fires on other platforms;
-// main()'s existing behavior is otherwise unchanged.
+// flow self-install แบบ single-file (selfinstall_windows.go) มีเฉพาะบน
+// Windows เท่านั้น — การ deploy บน macOS ยังคงผ่าน
+// dist-agent-deploy-macos/install.sh เหมือนเดิม stub พวกนี้แค่ทำให้
+// shouldSelfInstall ไม่ทำงานบนแพลตฟอร์มอื่น พฤติกรรมเดิมของ main() ยังคง
+// เหมือนเดิมทุกอย่าง
 package main
 
 func shouldSelfInstall(svcFlag string, runForeground bool) bool { return false }

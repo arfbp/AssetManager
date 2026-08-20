@@ -6,7 +6,7 @@ import (
 	"optifleet-agent/internal/telemetry"
 )
 
-// LeakEvent is what gets reported upstream when a suspected leak is found.
+// LeakEvent คือสิ่งที่ถูกรายงานขึ้นไปเมื่อพบ leak ที่ต้องสงสัย
 type LeakEvent struct {
 	LeakAlert
 	TrimAttempted bool
@@ -29,16 +29,16 @@ func NewMemoryMonitor(cfg LeakConfig, log, audit zerolog.Logger, onLeak func(Lea
 	}
 }
 
-// Observe should be called with every telemetry snapshot — wire it into the
-// same poller callback that forwards snapshots to the server. On a
-// suspected leak it attempts a working-set trim (Windows only; a no-op
-// error on other platforms) and always reports the event upstream.
+// Observe ควรถูกเรียกทุกครั้งที่มี telemetry snapshot — ต่อสายเข้ากับ
+// poller callback ตัวเดียวกับที่ forward snapshot ไปให้ server เมื่อพบ leak
+// ที่ต้องสงสัย จะพยายาม trim working-set (เฉพาะ Windows; แพลตฟอร์มอื่นจะได้
+// error แบบ no-op) และรายงาน event ขึ้นไปเสมอ
 //
-// It deliberately does not kill or restart the offending process itself: a
-// heuristic monotonic-growth signal isn't reliable enough to justify
-// silently destroying a user's unsaved work. This surfaces the alert and
-// leaves the decision to whoever owns policy on the server side — which can
-// then push an explicit, signed kill_process command if it decides to.
+// ตั้งใจไม่ kill หรือ restart process ที่มีปัญหาเอง: สัญญาณ heuristic แบบ
+// growth เป็น monotonic ยังไม่น่าเชื่อถือพอที่จะเอาไปทำลายงานที่ user ยังไม่
+// ได้ save แบบเงียบ ๆ ได้ ตรงนี้แค่ surface alert ออกไป แล้วปล่อยให้คนที่ดูแล
+// policy ฝั่ง server เป็นคนตัดสินใจ — ซึ่งจะ push คำสั่ง kill_process ที่
+// เซ็นแล้วชัดเจนได้ถ้าตัดสินใจแบบนั้น
 func (m *MemoryMonitor) Observe(snap telemetry.Snapshot) {
 	defer func() {
 		if r := recover(); r != nil {

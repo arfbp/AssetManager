@@ -2,14 +2,15 @@ package main
 
 import _ "embed"
 
-// Bundled so the Windows single-file distribution needs no side-by-side
-// agent.yaml/cert files — see selfinstall_windows.go. Values here are the
-// same LAN test deployment already shipped in dist-agent-deploy/: this dev
-// machine's server address, its self-signed LAN cert, and the LAN test
-// auth token/HMAC secret (already visible in plaintext in that deployment's
-// agent.yaml/install.ps1 — embedding them here doesn't change that
-// exposure, only consolidates the files). Rotate all three and rebuild
-// before using this outside a trusted local network.
+// ฝังไว้ในไบนารีเพื่อให้ Windows single-file distribution ไม่ต้องพึ่งไฟล์
+// agent.yaml/cert แยกต่างหากอีก — ดู selfinstall_windows.go ค่าที่ฝังไว้
+// ตรงนี้เป็นชุดเดียวกับ LAN test deployment ที่ปล่อยไปแล้วใน
+// dist-agent-deploy/: server address ของเครื่อง dev เครื่องนี้,
+// self-signed LAN cert, และ auth token/HMAC secret สำหรับทดสอบใน LAN
+// (ค่าพวกนี้เห็นเป็น plaintext อยู่แล้วใน agent.yaml/install.ps1 ของ
+// deployment นั้น — การฝังไว้ตรงนี้ไม่ได้เพิ่มความเสี่ยง แค่รวมไฟล์ให้
+// อยู่ที่เดียว) ต้อง rotate ทั้งสามค่าและ build ใหม่ก่อนใช้งานนอกเครือข่าย
+// LAN ที่เชื่อถือได้
 
 //go:embed embedded/agent.yaml
 var embeddedAgentYAML []byte

@@ -1,11 +1,11 @@
-// Structured logging: one operational logger, one append-only audit logger.
-// Mirrors the split used on the agent side (agent.log / audit.log) so the two
-// halves of the system are consistent to operate.
+// Structured logging: logger สำหรับงาน operational หนึ่งตัว และ audit logger
+// แบบ append-only อีกหนึ่งตัว สอดคล้องกับการแยกแบบเดียวกันที่ฝั่ง agent ใช้
+// (agent.log / audit.log) เพื่อให้ทั้งสองฝั่งของระบบดูแลจัดการได้ตรงกัน
 import pino from "pino";
 
-// exactOptionalPropertyTypes forbids `transport: undefined` — an optional
-// property must be entirely absent, not present-with-undefined — so the key
-// is included conditionally instead of set to a possibly-undefined value.
+// exactOptionalPropertyTypes ห้ามไม่ให้ `transport: undefined` — property ที่
+// เป็น optional ต้องไม่มี key นั้นเลย จะมี key แต่ค่าเป็น undefined ไม่ได้ —
+// จึงต้องใส่ key นี้แบบมีเงื่อนไขแทนที่จะตั้งเป็นค่าที่อาจเป็น undefined
 const prettyTransport =
   process.env.NODE_ENV === "production" ? {} : { transport: { target: "pino-pretty", options: { colorize: true } } };
 

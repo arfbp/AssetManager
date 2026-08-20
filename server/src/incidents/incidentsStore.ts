@@ -1,5 +1,6 @@
-// Per-device incident log data access — see schema.sql's device_incidents
-// table comment for the "one row per episode, not per poll" design.
+// จุดเข้าถึงข้อมูล incident log ต่ออุปกรณ์ — ดู comment ของตาราง
+// device_incidents ใน schema.sql สำหรับดีไซน์ "หนึ่งแถวต่อหนึ่งเหตุการณ์
+// ไม่ใช่ต่อการ poll แต่ละครั้ง"
 import type { Pool } from "pg";
 
 export interface IncidentRecord {
@@ -43,8 +44,8 @@ export async function resolveIncident(pool: Pool, id: number): Promise<void> {
   await pool.query(`UPDATE device_incidents SET resolved_at = now() WHERE id = $1 AND resolved_at IS NULL`, [id]);
 }
 
-// Capped at 200 rows — this is an operator-facing recent-incident feed, not
-// a full audit export.
+// จำกัดไว้ที่ 200 แถว — เพราะนี่คือ feed เหตุการณ์ล่าสุดสำหรับผู้ควบคุมดู ไม่ใช่
+// การ export ข้อมูล audit เต็มรูปแบบ
 export async function listIncidents(pool: Pool, orgId: string, agentId: string): Promise<IncidentRecord[]> {
   const { rows } = await pool.query<IncidentRow>(
     `SELECT * FROM device_incidents WHERE org_id = $2 AND agent_id = $1 ORDER BY occurred_at DESC LIMIT 200`,
@@ -59,12 +60,12 @@ export interface IncidentSummary {
   lastIncidentAt: string;
 }
 
-// Fleet-wide "which devices act up the most" ranking for the Dashboard —
-// pure aggregate count over device_incidents, no LLM involved (unlike the
-// per-device "should we replace this?" analysis, which does call the model
-// and is deliberately kept as an on-demand button rather than something
-// computed automatically for every device). Devices with zero incidents in
-// the window are simply absent, not returned as zero-count rows.
+// อันดับ "อุปกรณ์ไหนมีปัญหามากที่สุด" ทั้ง fleet สำหรับ Dashboard — เป็นแค่
+// การนับรวมล้วน ๆ จาก device_incidents ไม่มี LLM เข้ามาเกี่ยวข้องเลย (ต่างจาก
+// การวิเคราะห์ "ควรเปลี่ยนเครื่องนี้ไหม?" รายอุปกรณ์ ซึ่งเรียกโมเดลจริงและ
+// ตั้งใจทำให้เป็นปุ่มกดตามต้องการ แทนที่จะคำนวณอัตโนมัติให้ทุกอุปกรณ์)
+// อุปกรณ์ที่ไม่มี incident เลยในช่วงเวลานั้นจะไม่ปรากฏเลย ไม่ใช่คืนมาเป็นแถว
+// ที่นับได้ 0
 export async function listIncidentSummary(pool: Pool, orgId: string, days: number, limit: number): Promise<IncidentSummary[]> {
   const { rows } = await pool.query<{ agent_id: string; incident_count: string; last_incident_at: string }>(
     `SELECT agent_id, count(*) AS incident_count, max(occurred_at) AS last_incident_at

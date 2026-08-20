@@ -10,14 +10,14 @@ type GateState =
   | { phase: "unauthenticated" };
 
 /**
- * Gates the whole dashboard behind a real login (server/src/auth/) instead
- * of a static shared token. Checked once on mount via GET /api/auth/me
- * (session.ts's checkSession) so a stale/expired token from a previous
- * visit shows the login form immediately rather than only after the first
- * failed API call. A network error while checking is treated as "probably
- * still logged in" (falls back to the last known username) rather than
- * bouncing to login on a transient blip — a real 401 from any later request
- * still triggers the unauthorized event below.
+ * คุมสิทธิ์เข้าดู dashboard ทั้งหมดด้วยการล็อกอินจริง (server/src/auth/)
+ * แทนการใช้ token กลางที่ใช้ร่วมกันแบบเดิม เช็คครั้งเดียวตอน mount ผ่าน
+ * GET /api/auth/me (checkSession ใน session.ts) เพื่อให้ token ที่หมดอายุ
+ * จากการเข้าใช้งานครั้งก่อนแสดงหน้าล็อกอินทันที ไม่ต้องรอให้ API call
+ * แรกล้มเหลวก่อน ถ้าเช็คแล้วเจอ network error จะถือว่า "น่าจะยังล็อกอิน
+ * อยู่" (ใช้ username ล่าสุดที่จำไว้) แทนที่จะเด้งไปหน้าล็อกอินทันทีเพราะ
+ * เน็ตสะดุดชั่วคราว — ส่วน 401 จริงจาก request ใดๆ ทีหลังยังคง trigger
+ * event unauthorized ด้านล่างตามปกติ
  */
 export function AuthGate({ children }: { children: (username: string) => React.ReactNode }) {
   const [state, setState] = useState<GateState>({ phase: "checking" });

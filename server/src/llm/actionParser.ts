@@ -1,23 +1,24 @@
-// Turns a dashboard operator's natural-language request into a ParsedIntent
-// via Groq's OpenAI-compatible Chat Completions API, using forced tool use
-// so the model can only ever return the fixed shape in schema.ts — never
-// free text, never a command the agent doesn't implement.
+// แปลงคำสั่งภาษาธรรมชาติของผู้ควบคุม dashboard ให้เป็น ParsedIntent
+// ผ่าน Groq's OpenAI-compatible Chat Completions API โดยบังคับให้โมเดล
+// ใช้ tool call เท่านั้น ทำให้โมเดลตอบกลับได้เฉพาะรูปแบบตายตัวใน schema.ts
+// เท่านั้น — ไม่มีทางตอบเป็นข้อความอิสระ หรือสั่งคำสั่งที่ agent ไม่รองรับ
 //
-// Trust boundary: this module's output is NOT trusted as an authorization
-// decision. It's a parse of user intent, same as any other user input —
-// security/guardrail.ts re-validates everything (allowlist membership,
-// scope resolution against local config, blacklist scan) independently of
-// what the model returned. If the LLM is ever compromised, tricked via
-// prompt injection in the input text, or simply wrong, the guardrail is
-// what actually decides whether a command reaches an agent.
+// ขอบเขตความน่าเชื่อถือ: ผลลัพธ์จากโมดูลนี้ "ไม่ถูกเชื่อถือ" ว่าเป็นการ
+// อนุมัติสิทธิ์ ถือเป็นแค่การตีความ intent ของผู้ใช้ เหมือน input อื่น ๆ
+// ทั่วไป — security/guardrail.ts จะตรวจสอบซ้ำทุกอย่าง (การเช็ค allowlist,
+// การ resolve scope เทียบกับ config ในเครื่อง, การสแกน blacklist) แยกต่างหาก
+// จากสิ่งที่โมเดลตอบกลับมา ถ้า LLM ถูกโจมตี ถูกหลอกด้วย prompt injection
+// ในข้อความ input หรือแค่ตอบผิด guardrail คือส่วนที่ตัดสินใจจริงว่าคำสั่ง
+// จะไปถึง agent หรือไม่
 import OpenAI from "openai";
 import { log } from "../logger.js";
 import { EMIT_FLEET_COMMAND_TOOL, ParsedIntentSchema, type ParsedIntent } from "./schema.js";
 import { EMIT_ADMIN_COMMAND_TOOL, AdminParsedIntentSchema, type AdminParsedIntent } from "./adminSchema.js";
+import { EMIT_ERP_COMMAND_TOOL, ErpParsedIntentSchema, type ErpParsedIntent } from "./erpSchema.js";
 
-// Groq's Chat Completions API is OpenAI-compatible, so the OpenAI SDK talks
-// to it directly by overriding baseURL — see server/README.md for why this
-// swap is a drop-in replacement for the Claude API integration.
+// Groq's Chat Completions API รองรับรูปแบบเดียวกับ OpenAI ดังนั้น OpenAI SDK
+// จึงคุยกับ Groq ได้ตรง ๆ แค่ override baseURL — ดู server/README.md ว่าทำไม
+// การสลับนี้จึงใช้แทน Claude API integration เดิมได้แบบไม่ต้องแก้โค้ดส่วนอื่น
 const client = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
@@ -32,13 +33,12 @@ export class ParseRefusedError extends Error {
   }
 }
 
-// Distinct from ParseRefusedError: the model didn't decline on safety
-// grounds, it tried to answer but produced a function call Groq's own
-// strict-mode parser couldn't validate (surfaces as their API returning
-// HTTP 400 with code "tool_use_failed" instead of a normal completion) —
-// a real, if infrequent, reliability gap in the free model this project
-// uses, not a bug in this codebase's own request. Previously unhandled,
-// this crashed straight through to Express's generic 500.
+// ต่างจาก ParseRefusedError: กรณีนี้โมเดลไม่ได้ปฏิเสธเพราะเหตุผลด้านความปลอดภัย
+// แต่พยายามตอบแล้วสร้าง function call ที่ strict-mode parser ของ Groq เอง
+// ตรวจสอบไม่ผ่าน (ปรากฏเป็น API ตอบ HTTP 400 code "tool_use_failed" แทนที่จะ
+// เป็น completion ปกติ) — เป็นช่องโหว่ด้านความน่าเชื่อถือของโมเดลฟรีที่โปรเจกต์
+// นี้ใช้จริง ๆ ไม่ใช่บั๊กจาก request ฝั่งโค้ดเรา เดิมทีไม่ได้ดักไว้ ทำให้ error
+// นี้หลุดไปเป็น 500 ทั่วไปของ Express ตรง ๆ
 export class ParseFailedError extends Error {
   constructor(cause: unknown) {
     super("the model failed to produce a valid tool call for this request");
@@ -47,12 +47,11 @@ export class ParseFailedError extends Error {
   }
 }
 
-// Groq's on-demand tier caps tokens-per-day per organization (not per user)
-// — this project's own testing traffic alone can exhaust it well before the
-// day is over. Previously unhandled, this crashed straight through to
-// Express's generic 500 with no indication of what actually went wrong or
-// when it would recover; retryAfterSeconds lets the caller surface an
-// accurate "try again in N minutes" instead.
+// Groq's on-demand tier จำกัด tokens-per-day ต่อ organization (ไม่ใช่ต่อ user)
+// — แค่ traffic จากการเทสต์ของโปรเจกต์นี้เองก็ใช้โควตาหมดก่อนหมดวันได้ เดิมที
+// ไม่ได้ดักไว้ ทำให้หลุดไปเป็น 500 ทั่วไปของ Express โดยไม่บอกเลยว่าเกิดอะไรขึ้น
+// หรือจะกลับมาใช้ได้เมื่อไหร่ retryAfterSeconds ช่วยให้ฝั่งเรียกใช้แสดงข้อความ
+// "ลองใหม่อีกครั้งในอีก N นาที" ที่แม่นยำแทน
 export class RateLimitedError extends Error {
   constructor(public readonly retryAfterSeconds: number | null) {
     super("the language model's daily request quota is exhausted");
@@ -60,10 +59,10 @@ export class RateLimitedError extends Error {
   }
 }
 
-// Groq's 429 body includes a human-readable "...try again in 10m41.088s..."
-// string but no machine-readable retry-after field on this error shape —
-// parsed defensively since a wording change upstream should degrade to "no
-// estimate" rather than throwing.
+// body ของ 429 จาก Groq มีข้อความอ่านง่ายแบบ "...try again in 10m41.088s..."
+// แต่ error shape นี้ไม่มี field retry-after ที่อ่านด้วยโค้ดได้ตรง ๆ — จึง parse
+// แบบระวังไว้ก่อน เพราะถ้าฝั่ง Groq เปลี่ยนถ้อยคำ ควร fallback เป็น "ไม่มีค่า
+// ประมาณการ" แทนที่จะ throw error
 function parseRetryAfterSeconds(message: string): number | null {
   const match = message.match(/try again in (?:(\d+)m)?([\d.]+)s/);
   if (!match) return null;
@@ -76,10 +75,12 @@ function parseRetryAfterSeconds(message: string): number | null {
 function buildSystemPrompt(knownScopes: string[], presetScope?: string): string {
   return [
     "You translate an IT operator's natural-language request into a single structured command by calling exactly",
-    "one of the two tools available to you. Use emit_admin_command when the request is about an ORGANIZATION",
+    "one of the three tools available to you. Use emit_admin_command when the request is about an ORGANIZATION",
     "(creating a new customer, suspending/reactivating/deleting one) or a USER ACCOUNT (creating/deleting/",
     "suspending/reactivating a login), or about obtaining an agent installer — none of these target a specific",
-    "device. Use emit_fleet_command for everything else below, which is about acting on or asking about a",
+    "device. Use emit_erp_command when the request is about a VENDOR/SUPPLIER, a PURCHASE ORDER, scheduled or",
+    "completed MAINTENANCE on an asset, or HANDING OVER an asset to an employee — also none of these target a",
+    "specific device. Use emit_fleet_command for everything else below, which is about acting on or asking about a",
     "specific device or device group.",
     "",
     "You translate an IT operator's natural-language request into a single structured fleet-management command.",
@@ -162,7 +163,7 @@ function buildSystemPrompt(knownScopes: string[], presetScope?: string): string 
   ].join("\n");
 }
 
-export type ParsedCommand = { kind: "device"; parsed: ParsedIntent } | { kind: "admin"; parsed: AdminParsedIntent };
+export type ParsedCommand = { kind: "device"; parsed: ParsedIntent } | { kind: "admin"; parsed: AdminParsedIntent } | { kind: "erp"; parsed: ErpParsedIntent };
 
 export async function parseNaturalLanguageCommand(
   text: string,
@@ -174,10 +175,10 @@ export async function parseNaturalLanguageCommand(
     response = await client.chat.completions.create({
       model: MODEL,
       max_tokens: 1024,
-      tools: [EMIT_FLEET_COMMAND_TOOL, EMIT_ADMIN_COMMAND_TOOL],
-      // "required" (not a forced single tool) — the model picks whichever of
-      // the two registered tools matches the request, see buildSystemPrompt's
-      // routing note above.
+      tools: [EMIT_FLEET_COMMAND_TOOL, EMIT_ADMIN_COMMAND_TOOL, EMIT_ERP_COMMAND_TOOL],
+      // ใช้ "required" (ไม่ใช่บังคับ tool เดียว) — ให้โมเดลเลือกเองว่า tool ไหน
+      // ใน 3 ตัวที่ลงทะเบียนไว้ตรงกับคำขอ ดูหมายเหตุการ routing ใน
+      // buildSystemPrompt ด้านบน
       tool_choice: "required",
       messages: [
         { role: "system", content: buildSystemPrompt(knownScopes, presetScope) },
@@ -205,21 +206,27 @@ export async function parseNaturalLanguageCommand(
 
   const toolCall = choice?.message.tool_calls?.find(
     (c): c is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
-      c.type === "function" && (c.function.name === "emit_fleet_command" || c.function.name === "emit_admin_command"),
+      c.type === "function" && (c.function.name === "emit_fleet_command" || c.function.name === "emit_admin_command" || c.function.name === "emit_erp_command"),
   );
   if (!toolCall) {
-    throw new Error(`llm: expected an emit_fleet_command or emit_admin_command tool call, got finish_reason=${choice?.finish_reason}`);
+    throw new Error(`llm: expected an emit_fleet_command, emit_admin_command, or emit_erp_command tool call, got finish_reason=${choice?.finish_reason}`);
   }
 
-  // Defense in depth: re-validate with zod rather than trusting the model's
-  // JSON output blindly — the model can still return malformed/extra fields
-  // regardless of what the schema requested.
+  // ป้องกันซ้อนอีกชั้น: re-validate ด้วย zod แทนที่จะเชื่อ JSON output ของโมเดล
+  // ตรง ๆ — โมเดลยังมีโอกาสตอบ field ที่ผิดรูปแบบหรือเกินมาได้ ไม่ว่า schema
+  // จะขอไว้แบบไหนก็ตาม
   const rawArgs: unknown = JSON.parse(toolCall.function.arguments);
 
   if (toolCall.function.name === "emit_admin_command") {
     const parsed = AdminParsedIntentSchema.parse(rawArgs);
     log.info({ parsed }, "llm: parsed natural-language admin command");
     return { kind: "admin", parsed };
+  }
+
+  if (toolCall.function.name === "emit_erp_command") {
+    const parsed = ErpParsedIntentSchema.parse(rawArgs);
+    log.info({ parsed }, "llm: parsed natural-language erp command");
+    return { kind: "erp", parsed };
   }
 
   const parsed = ParsedIntentSchema.parse(rawArgs);

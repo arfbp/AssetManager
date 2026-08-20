@@ -1,13 +1,15 @@
-// Bridges the two in-memory live-state stores (AgentRegistry,
-// CommandHistoryStore) to durable Postgres storage, by subscribing to the
-// same EventEmitter events ws/dashboardServer.ts already uses to push live
-// updates to browser clients. This is a pure add-on: nothing in ws/server.ts,
-// api/routes.ts, or ws/dispatch.ts needs to change to get persistence.
+// เชื่อม in-memory live-state store สองตัว (AgentRegistry,
+// CommandHistoryStore) เข้ากับที่เก็บถาวรใน Postgres โดย subscribe
+// EventEmitter event ชุดเดียวกับที่ ws/dashboardServer.ts ใช้ push อัปเดตสดๆ
+// ไปยัง browser client อยู่แล้ว นี่คือ add-on แบบบริสุทธิ์: ไม่มีอะไรใน
+// ws/server.ts, api/routes.ts หรือ ws/dispatch.ts ที่ต้องแก้เพื่อให้ได้
+// persistence มา
 //
-// Writes are fire-and-forget and every failure is caught and logged, never
-// thrown — a database outage must degrade to "this snapshot/entry didn't get
-// persisted", not take down live agent handling or command dispatch, which
-// have to keep working regardless of whether Postgres is reachable.
+// การเขียนเป็นแบบ fire-and-forget และทุก failure ถูกดักจับและ log ไว้ ไม่มี
+// การ throw เลย — DB ที่ล่มต้อง degrade ลงเป็น "snapshot/entry นี้ไม่ได้
+// persist" เท่านั้น ต้องไม่ทำให้การจัดการ agent สดๆ หรือการ dispatch คำสั่ง
+// หยุดทำงานตาม ซึ่งทั้งสองอย่างนี้ต้องทำงานต่อไปได้ไม่ว่า Postgres จะเข้าถึง
+// ได้หรือไม่
 import type { Pool } from "pg";
 import { log } from "../logger.js";
 import type { AgentRegistry, AgentSummary } from "../ws/registry.js";
@@ -19,11 +21,12 @@ import { findOpenConnection, closeConnection, openConnection } from "../assets/c
 import { notifyAll } from "../notifications/dispatcher.js";
 import type { NotifyConfig } from "../notifications/types.js";
 
-// Serial values some OEMs ship literally instead of a real serial (common on
-// custom-built desktops with no OEM-programmed BIOS serial) — verified on a
-// real test machine (Win32_BIOS.SerialNumber = "To Be Filled By O.E.M."), so
-// these must never be treated as a real identifier for matching purposes,
-// or every machine with a blank BIOS would spuriously merge into one asset.
+// ค่า serial ที่ OEM บางเจ้า ship มาแบบตัวอักษรตรงๆ แทนที่จะเป็น serial จริง
+// (พบบ่อยบนเครื่อง desktop ที่ประกอบเองไม่มี BIOS serial ที่ OEM programme
+// ไว้) — ยืนยันจากเครื่องทดสอบจริงแล้ว (Win32_BIOS.SerialNumber = "To Be
+// Filled By O.E.M.") ดังนั้นค่าพวกนี้ต้องไม่ถูกถือว่าเป็น identifier จริง
+// สำหรับการ match เด็ดขาด ไม่งั้นทุกเครื่องที่ BIOS serial ว่างเปล่าจะถูก
+// merge เข้าเป็น asset เดียวกันแบบผิดๆ
 const PLACEHOLDER_SERIALS = new Set([
   "to be filled by o.e.m.",
   "system serial number",
@@ -78,13 +81,12 @@ interface AgentRow {
   remote_ip: string | null;
 }
 
-// Warm-starts AgentRegistry's in-memory copy from durable storage at startup
-// — see AgentRegistry.hydrate's own doc comment for why this matters (a
-// restart previously blanked lastTelemetry/remoteIp back to null for a
-// perfectly healthy device until its next scheduled poll, up to 5 minutes
-// away). `status` from the row is intentionally ignored here — hydrate()
-// always seeds "offline" regardless, since this process hasn't actually
-// observed a live connection yet.
+// Warm-start สำเนาในหน่วยความจำของ AgentRegistry จากที่เก็บถาวรตอน startup —
+// ดู doc comment ของ AgentRegistry.hydrate เองว่าทำไมเรื่องนี้ถึงสำคัญ (การ
+// restart เคยทำให้ lastTelemetry/remoteIp กลายเป็น null สำหรับอุปกรณ์ที่
+// สุขภาพดีจนกว่าจะถึงรอบ poll ครั้งถัดไป ซึ่งอาจนานถึง 5 นาที) `status` จาก
+// แถวข้อมูลถูกละเลยไว้โดยตั้งใจตรงนี้ — hydrate() จะ seed เป็น "offline"
+// เสมอไม่ว่าอะไรจะเกิดขึ้น เพราะ process นี้ยังไม่เคยเห็น connection จริงๆ
 export async function loadPersistedAgents(pool: Pool): Promise<AgentSummary[]> {
   const { rows } = await pool.query<AgentRow>(
     `SELECT org_id, agent_id, status, connected_at, last_seen_at, last_telemetry, remote_ip FROM agents`,
@@ -97,9 +99,9 @@ export async function loadPersistedAgents(pool: Pool): Promise<AgentSummary[]> {
     lastSeenAt: r.last_seen_at.getTime(),
     lastTelemetry: r.last_telemetry,
     remoteIp: r.remote_ip,
-    // Not persisted anywhere — repopulated from the agent's own next
-    // heartbeat after it reconnects, same as every other "unknown until
-    // fresh data arrives" field here.
+    // ไม่ได้ persist ไว้ที่ไหนเลย — จะถูกเติมกลับจาก heartbeat ครั้งถัดไปของ
+    // agent เองหลัง reconnect เหมือนกับทุก field อื่นในที่นี้ที่ "ไม่รู้
+    // จนกว่าข้อมูลใหม่จะมาถึง"
     version: null,
     configHash: null,
   }));
@@ -127,16 +129,15 @@ async function upsertAgent(pool: Pool, s: AgentSummary): Promise<void> {
   );
 }
 
-// Every device that ever connects becomes an asset automatically — the
-// operator's actual request was "a device that got installed IS an asset,
-// don't make me register it by hand." Runs on every agent "update" event
-// (frequent — every heartbeat/telemetry), so it's written to be a cheap
-// no-op once the asset already exists rather than something that should
-// only ever run once; the UNIQUE constraint on assets(org_id, agent_id)
-// also makes a concurrent double-create (two events racing before either
-// commits) resolve safely — one wins, the other's insert fails and is
-// swallowed here rather than logged as a real error, since "someone else
-// already created it" isn't a failure.
+// อุปกรณ์ทุกตัวที่เคย connect จะกลายเป็น asset โดยอัตโนมัติ — สิ่งที่
+// operator ต้องการจริงๆ คือ "อุปกรณ์ที่ติดตั้งไปแล้ว ก็คือ asset เลย ไม่ต้อง
+// ให้ฉันมานั่งลงทะเบียนเอง" รันทุกครั้งที่มี "update" event ของ agent (บ่อย
+// มาก — ทุก heartbeat/telemetry) ดังนั้นจึงเขียนให้เป็น no-op ที่ต้นทุนต่ำเมื่อ
+// asset มีอยู่แล้ว แทนที่จะเป็นสิ่งที่ควรรันแค่ครั้งเดียว UNIQUE constraint
+// บน assets(org_id, agent_id) ยังช่วยให้การสร้างซ้ำพร้อมกัน (สอง event แข่ง
+// กันก่อนที่ตัวไหนจะ commit) resolve ได้อย่างปลอดภัย — ตัวหนึ่งชนะ อีกตัว
+// insert ล้มเหลวและถูกกลืนไว้ตรงนี้แทนที่จะ log เป็น error จริง เพราะ "มีคน
+// อื่นสร้างไปแล้ว" ไม่ใช่ความล้มเหลว
 async function ensureAssetForAgent(pool: Pool, summary: AgentSummary): Promise<void> {
   const { orgId, agentId } = summary;
   const { rows } = await pool.query<{ exists: boolean }>(
@@ -145,10 +146,10 @@ async function ensureAssetForAgent(pool: Pool, summary: AgentSummary): Promise<v
   );
   if (rows[0]?.exists) return;
 
-  // No telemetry yet (agent just connected, snapshot hasn't arrived) — skip
-  // for now rather than create a bare shell. Telemetry arrival re-triggers
-  // this same "update" event, so it's retried automatically once a serial
-  // is actually known.
+  // ยังไม่มี telemetry (agent เพิ่ง connect snapshot ยังมาไม่ถึง) — ข้ามไป
+  // ก่อน แทนที่จะสร้าง shell เปล่าๆ ขึ้นมา การมาถึงของ telemetry จะ trigger
+  // "update" event ตัวนี้ซ้ำอีกครั้ง ดังนั้นจะ retry เองอัตโนมัติเมื่อรู้
+  // serial แล้วจริงๆ
   if (!summary.lastTelemetry) return;
 
   const serial = summary.lastTelemetry.serial_number;
@@ -175,7 +176,7 @@ async function ensureAssetForAgent(pool: Pool, summary: AgentSummary): Promise<v
     log.info({ orgId, agentId, assetTag }, "assets: auto-registered newly connected device");
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
-      return; // lost a race to another concurrent event — the asset exists now either way
+      return; // แพ้ race ให้ event อื่นที่เกิดพร้อมกัน — asset มีอยู่แล้วไม่ว่าจะทางไหน
     }
     throw err;
   }
@@ -200,20 +201,19 @@ async function insertTelemetry(pool: Pool, orgId: string, agentId: string, snaps
   );
 }
 
-// (orgId, agentId) -> currently-open "resource_alert" device_incidents row
-// id, and -> last-seen mode — the same edge-triggered-transition pattern
-// notifications/alertWatcher.ts already uses (registry's "update" event
-// fires on *every* heartbeat regardless of whether mode actually changed,
-// so without diffing against the previous mode this would open a new
-// incident on every single poll while a device sits in alert mode, not once
-// per episode). Kept separate from alertWatcher's own previousMode map —
-// notifications and incident logging are different concerns that happen to
-// both subscribe to the same event. In-memory only, same caveat as
-// openHangIncidents below: a server restart loses track of an
-// already-open episode, so a device still in alert mode after a restart
-// gets one fresh incident row rather than resuming the old one. Keyed by
-// org+agent (not agent alone) so two orgs' agents sharing a hostname never
-// collide in these trackers.
+// (orgId, agentId) -> id ของแถว device_incidents ประเภท "resource_alert" ที่
+// เปิดอยู่ตอนนี้ และ -> mode ล่าสุดที่เห็น — pattern edge-triggered-transition
+// เดียวกับที่ notifications/alertWatcher.ts ใช้อยู่แล้ว ("update" event ของ
+// registry ยิงทุก heartbeat ไม่ว่า mode จะเปลี่ยนจริงหรือไม่ ดังนั้นถ้าไม่ diff
+// กับ mode ก่อนหน้า จะเปิด incident ใหม่ทุกรอบ poll ตลอดเวลาที่อุปกรณ์อยู่ใน
+// alert mode แทนที่จะเปิดแค่ครั้งเดียวต่อ episode) แยกจาก previousMode map
+// ของ alertWatcher เอง — notifications กับ incident logging เป็นคนละเรื่อง
+// กันที่บังเอิญ subscribe event เดียวกัน อยู่ในหน่วยความจำเท่านั้น ข้อควร
+// ระวังเดียวกับ openHangIncidents ด้านล่าง: เซิร์ฟเวอร์ restart จะทำให้เสีย
+// ร่องรอยของ episode ที่เปิดอยู่ ดังนั้นอุปกรณ์ที่ยังอยู่ใน alert mode หลัง
+// restart จะได้แถว incident ใหม่แทนที่จะกลับไปที่แถวเดิม คีย์ด้วย org+agent
+// (ไม่ใช่ agent อย่างเดียว) เพื่อไม่ให้ agent ของสอง org ที่แชร์ hostname
+// เดียวกันชนกันใน tracker พวกนี้
 const openAlertIncidents = new Map<string, number>();
 const previousAlertMode = new Map<string, "normal" | "alert">();
 
@@ -221,22 +221,21 @@ function agentKey(orgId: string, agentId: string): string {
   return `${orgId}:${agentId}`;
 }
 
-// Alert mode (CPU/RAM over the agent's configured threshold) previously
-// only ever reached an operator as a transient dashboard badge and an
-// outbound Slack/Teams/email notification (if configured) — nothing
-// persisted it, so there was no way to look back and see *why* a device had
-// been flagged, or even that it had been. This gives it the same durable
-// "Incidents" record process-hang detection already gets, with the actual
-// CPU/RAM numbers in the message — the real cause, not just "alert mode",
-// since the agent's own threshold value never reaches the server at all
-// (only the resulting mode flag does).
+// เดิมที Alert mode (CPU/RAM เกิน threshold ที่ agent ตั้งค่าไว้) จะไปถึง
+// operator แค่ในรูปแบบ badge ชั่วคราวบน dashboard และแจ้งเตือนออกไปทาง
+// Slack/Teams/email (ถ้าตั้งค่าไว้) เท่านั้น — ไม่มีอะไร persist ไว้เลย
+// จึงไม่มีทางย้อนกลับไปดูได้ว่า *ทำไม* อุปกรณ์ถึงถูกตีธง หรือแม้แต่ว่ามันเคย
+// ถูกตีธงมาก่อนหรือไม่ ส่วนนี้ทำให้มันได้บันทึก "Incidents" แบบถาวรเหมือนกับ
+// ที่การตรวจจับ process-hang ได้อยู่แล้ว พร้อมตัวเลข CPU/RAM จริงในข้อความ —
+// สาเหตุจริง ไม่ใช่แค่ "alert mode" เฉยๆ เพราะค่า threshold ของ agent เองไม่
+// เคยส่งมาถึงเซิร์ฟเวอร์เลย (มีแค่ mode flag ที่เป็นผลลัพธ์เท่านั้นที่ส่งมา)
 function trackResourceAlerts(pool: Pool, summary: AgentSummary): void {
   const mode = summary.lastTelemetry?.mode;
   if (!mode) return;
   const key = agentKey(summary.orgId, summary.agentId);
   const prevMode = previousAlertMode.get(key);
   previousAlertMode.set(key, mode);
-  if (prevMode === undefined || prevMode === mode) return; // no transition (or first sighting of this agent)
+  if (prevMode === undefined || prevMode === mode) return; // ไม่มีการเปลี่ยนสถานะ (หรือเป็นครั้งแรกที่เห็น agent นี้)
 
   if (mode === "alert") {
     const snap = summary.lastTelemetry!;
@@ -259,13 +258,13 @@ function trackResourceAlerts(pool: Pool, summary: AgentSummary): void {
   }
 }
 
-// (orgId, agentId, pid, name) -> open device_incidents row id, so a process
-// that's still hung across many consecutive polls updates the same episode
-// instead of spamming a new row every ~5s/10s. In-memory only: a server
-// restart loses track of already-open episodes, which just means a
-// still-hung process gets a fresh incident row next poll rather than
-// resuming the old one — fine for what this is (a recent-activity feed),
-// not a durable audit log with stronger guarantees.
+// (orgId, agentId, pid, name) -> id ของแถว device_incidents ที่เปิดอยู่
+// เพื่อให้ process ที่ยัง hang ต่อเนื่องข้ามหลายรอบ poll อัปเดต episode
+// เดียวกัน แทนที่จะสแปมแถวใหม่ทุกๆ ~5-10 วินาที อยู่ในหน่วยความจำเท่านั้น:
+// เซิร์ฟเวอร์ restart จะทำให้เสียร่องรอยของ episode ที่เปิดอยู่ ซึ่งแปลว่า
+// process ที่ยัง hang จะได้แถว incident ใหม่ในรอบ poll ถัดไปแทนที่จะกลับไป
+// ที่แถวเดิม — โอเคสำหรับสิ่งนี้ (feed กิจกรรมล่าสุด) ไม่ใช่ audit log ถาวร
+// ที่ต้องการ guarantee เข้มกว่านี้
 const openHangIncidents = new Map<string, number>();
 
 function incidentKey(orgId: string, agentId: string, pid: number, name: string): string {
@@ -304,23 +303,22 @@ async function trackHungProcesses(
   }
 }
 
-// Recognizes a registered peripheral asset (matched by its own hand-entered
-// serial) showing up in a snapshot's connected_devices, and keeps
-// asset_connection_history — and assets.parent_agent_id, kept as "whichever
-// one is most recent" for the tree view in the Asset Registry page — in
-// sync with wherever it's actually plugged in right now. This is what
-// notices a monitor got moved to a different computer: the moment its
-// serial appears on a *different* agent's connected_devices than the one
-// its currently-open history episode says, that episode closes and a new
-// one opens against the new agent.
+// จดจำได้เมื่อ peripheral asset ที่ลงทะเบียนไว้แล้ว (match ด้วย serial ที่
+// กรอกเองด้วยมือ) โผล่มาใน connected_devices ของ snapshot แล้วคอยซิงค์
+// asset_connection_history — และ assets.parent_agent_id ที่เก็บไว้เป็น "ตัว
+// ล่าสุดที่เห็น" สำหรับ tree view ในหน้า Asset Registry — ให้ตรงกับว่ามัน
+// เสียบอยู่ที่ไหนจริงๆ ตอนนี้ นี่คือส่วนที่จับได้ว่าจอมอนิเตอร์ถูกย้ายไป
+// คอมพิวเตอร์เครื่องอื่น: ทันทีที่ serial ของมันโผล่มาใน connected_devices
+// ของ agent ตัวอื่นที่ไม่ใช่ตัวที่ history episode ที่เปิดอยู่ตอนนี้บอกไว้
+// episode นั้นจะถูกปิดและเปิด episode ใหม่กับ agent ตัวใหม่แทน
 async function trackPeripheralConnections(pool: Pool, orgId: string, agentId: string, snapshot: TelemetrySnapshot): Promise<void> {
   for (const device of snapshot.connected_devices) {
     if (!device.serial_number) continue;
     const asset = await findPeripheralAssetBySerial(pool, orgId, device.serial_number);
-    if (!asset) continue; // not registered as an asset — nothing to track yet
+    if (!asset) continue; // ยังไม่ได้ลงทะเบียนเป็น asset — ยังไม่มีอะไรต้อง track
 
     const open = await findOpenConnection(pool, orgId, asset.assetTag);
-    if (open?.agentId === agentId) continue; // already tracked correctly, no-op
+    if (open?.agentId === agentId) continue; // track ไว้ถูกต้องอยู่แล้ว ไม่ต้องทำอะไร
 
     if (open) {
       await closeConnection(pool, orgId, asset.assetTag, open.agentId);
@@ -352,11 +350,11 @@ interface CommandHistoryRow {
   resolved_at: Date | null;
 }
 
-// Warm-starts CommandHistoryStore's in-memory copy from durable storage at
-// startup — see CommandHistoryStore.hydrate's own doc comment for why this
-// matters (a restart previously blanked the dashboard/AI console/Commands
-// tab's view back to empty even though this table itself was never
-// affected). Ordered oldest-first to match hydrate's expected input.
+// Warm-start สำเนาในหน่วยความจำของ CommandHistoryStore จากที่เก็บถาวรตอน
+// startup — ดู doc comment ของ CommandHistoryStore.hydrate เองว่าทำไมเรื่อง
+// นี้ถึงสำคัญ (การ restart เคยทำให้หน้า dashboard/AI console/แท็บ Commands
+// ว่างเปล่าไป ทั้งที่ตารางนี้เองไม่เคยได้รับผลกระทบเลย) เรียงจากเก่าไปใหม่
+// ให้ตรงกับ input ที่ hydrate คาดหวัง
 export async function loadRecentHistory(pool: Pool, limit = 500): Promise<HistoryEntry[]> {
   const { rows } = await pool.query<CommandHistoryRow>(
     `SELECT command_id, org_id, agent_id, action, params, requested_by, source_text, status, message, dispatched_at, resolved_at

@@ -19,8 +19,8 @@ const bytesPerMB = 1024 * 1024
 const bytesPerGB = 1024 * 1024 * 1024
 
 type Collector struct {
-	// topN <= 0 means "no cap — report every running process". A positive
-	// value caps the report to that many, sorted by CPU descending.
+	// topN <= 0 แปลว่า "ไม่มี cap — รายงานทุก process ที่รันอยู่" ค่าที่เป็น
+	// บวกจะ cap รายงานไว้เท่านั้น เรียงจาก CPU มากไปน้อย
 	topN int
 }
 
@@ -28,14 +28,14 @@ func NewCollector(topN int) *Collector {
 	return &Collector{topN: topN}
 }
 
-// Collect gathers one telemetry snapshot. It never returns a partial error
-// for a single subsystem failure (e.g. one inaccessible process) — those are
-// skipped individually so a full snapshot still reaches the server.
+// Collect เก็บ telemetry snapshot หนึ่งชุด จะไม่คืน error บางส่วนแค่เพราะ
+// subsystem เดียวล้มเหลว (เช่น process ที่เข้าถึงไม่ได้ตัวหนึ่ง) — ตัวที่
+// พังจะถูกข้ามไปทีละตัว เพื่อให้ snapshot เต็มชุดยังส่งถึง server ได้
 func (c *Collector) Collect(ctx context.Context) (Snapshot, error) {
 	snap := Snapshot{Timestamp: time.Now().UTC()}
 
-	// cpu.Percent with a short blocking interval gives a real sampled value
-	// rather than a since-boot average.
+	// cpu.Percent ที่ใช้ interval สั้น ๆ แบบ blocking ให้ค่าที่ sample จริง
+	// แทนที่จะเป็นค่าเฉลี่ยนับตั้งแต่ boot
 	cpuPercents, err := cpuutil.PercentWithContext(ctx, 200*time.Millisecond, false)
 	if err != nil {
 		return snap, fmt.Errorf("telemetry: cpu percent: %w", err)
@@ -65,12 +65,12 @@ func (c *Collector) Collect(ctx context.Context) (Snapshot, error) {
 	return snap, nil
 }
 
-// collectHostInfo fills in hostname/IP/OS/uptime — best-effort like every
-// other sub-collector here: a failure in one field never blocks the rest of
-// the snapshot. This is what backs read-only "what's this device's IP /
-// uptime / OS version" questions asked through the AI console
-// (server/src/llm/queryAnswerer.ts) without needing a dedicated round-trip
-// command to the agent for information it already reports every snapshot.
+// collectHostInfo เติมข้อมูล hostname/IP/OS/uptime — best-effort เหมือน
+// sub-collector อื่น ๆ ทั้งหมดตรงนี้: field หนึ่งล้มเหลวจะไม่บล็อกส่วนที่
+// เหลือของ snapshot นี่คือสิ่งที่รองรับคำถาม read-only แบบ "IP / uptime /
+// เวอร์ชัน OS ของเครื่องนี้คืออะไร" ที่ถามผ่าน AI console
+// (server/src/llm/queryAnswerer.ts) โดยไม่ต้องมีคำสั่ง round-trip แยก
+// เฉพาะไปหา agent สำหรับข้อมูลที่มันรายงานอยู่แล้วทุก snapshot
 func (c *Collector) collectHostInfo(ctx context.Context, snap *Snapshot) {
 	if info, err := hostutil.InfoWithContext(ctx); err == nil {
 		snap.Hostname = info.Hostname
@@ -82,19 +82,25 @@ func (c *Collector) collectHostInfo(ctx context.Context, snap *Snapshot) {
 	snap.IPAddresses = collectIPAddresses()
 	snap.PublicIP = collectPublicIP()
 	snap.NetworkInterfaces = collectNetworkInterfaces()
+	snap.LocalUsers = collectLocalUsers()
+	snap.CurrentUser = collectCurrentUser()
 }
 
-// collectIPAddresses lists non-loopback IPv4 addresses across all
-// interfaces that are actually up — the "what's this machine's IP" answer
-// for a LAN-deployed fleet. A machine with several NICs (Wi-Fi + Ethernet +
-// a VPN adapter) legitimately has more than one; all are reported rather
-// than guessing which is "the" address.
+// collectIPAddresses แสดง IPv4 address ที่ไม่ใช่ loopback ของทุก interface
+// ที่ up อยู่จริง — คำตอบของ "IP เครื่องนี้คืออะไร" สำหรับฟลีตที่ deploy
+// อยู่ใน LAN เครื่องที่มีหลาย NIC (Wi-Fi + Ethernet + VPN adapter) มี IP
+// มากกว่าหนึ่งอันได้จริง ๆ เลยรายงานทั้งหมดแทนที่จะเดาว่าอันไหนคือ "ตัว
+// จริง"
 func collectIPAddresses() []string {
+	// เป็น slice ว่างแต่ไม่ใช่ nil ทุก path — slice ที่เป็น nil ใน Go จะ
+	// marshal เป็น JSON `null` และฝั่ง frontend เรียก .length บน field นี้
+	// โดยไม่เช็คก่อน ใช้ convention เดียวกับ
+	// collectPhysicalDisks/collectLocalUsers
+	ips := []string{}
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil
+		return ips
 	}
-	var ips []string
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
@@ -110,7 +116,7 @@ func collectIPAddresses() []string {
 			}
 			ip4 := ipNet.IP.To4()
 			if ip4 == nil {
-				continue // skip IPv6 — noisier and rarely what "what's the IP" means here
+				continue // ข้าม IPv6 — รกกว่าและแทบไม่ใช่สิ่งที่คำถาม "IP คืออะไร" ต้องการที่นี่
 			}
 			ips = append(ips, ip4.String())
 		}
@@ -121,13 +127,16 @@ func collectIPAddresses() []string {
 func (c *Collector) collectDisks(ctx context.Context) []DiskInfo {
 	parts, err := diskutil.PartitionsWithContext(ctx, false)
 	if err != nil {
-		return nil
+		// เป็น slice ว่างแต่ไม่ใช่ nil — slice ที่เป็น nil ใน Go จะ marshal
+		// เป็น JSON `null` และฝั่ง frontend เรียก .length บน field นี้โดยไม่
+		// เช็คก่อน
+		return []DiskInfo{}
 	}
 	disks := make([]DiskInfo, 0, len(parts))
 	for _, p := range parts {
 		usage, err := diskutil.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil {
-			continue // e.g. removable media not ready — skip, don't fail the snapshot
+			continue // เช่น removable media ยังไม่พร้อม — ข้ามไป ไม่ต้องทำให้ snapshot ทั้งชุดล้มเหลว
 		}
 		disks = append(disks, DiskInfo{
 			MountPoint:  p.Mountpoint,
@@ -142,7 +151,10 @@ func (c *Collector) collectDisks(ctx context.Context) []DiskInfo {
 func (c *Collector) collectTopProcesses(ctx context.Context) []ProcessInfo {
 	procs, err := processutil.ProcessesWithContext(ctx)
 	if err != nil {
-		return nil
+		// เป็น slice ว่างแต่ไม่ใช่ nil — slice ที่เป็น nil ใน Go จะ marshal
+		// เป็น JSON `null` และฝั่ง frontend เรียก .length บน field นี้โดยไม่
+		// เช็คก่อน
+		return []ProcessInfo{}
 	}
 
 	hung := hungWindowPIDs()
@@ -151,7 +163,7 @@ func (c *Collector) collectTopProcesses(ctx context.Context) []ProcessInfo {
 	for _, p := range procs {
 		name, err := p.NameWithContext(ctx)
 		if err != nil {
-			continue // process likely exited between listing and read — skip it
+			continue // process น่าจะ exit ไปแล้วระหว่างช่วง listing กับ read — ข้ามไป
 		}
 		cpuPct, _ := p.CPUPercentWithContext(ctx)
 		memMB := 0.0

@@ -1,7 +1,7 @@
-// Wire format shared with the Go agent (internal/transport/protocol.go).
-// Keep these two files in sync by hand — there is no shared schema generator
-// between the Go and TypeScript codebases, so a field added on one side must
-// be added here too.
+// รูปแบบ wire format ที่ใช้ร่วมกับ Go agent (internal/transport/protocol.go)
+// สองไฟล์นี้ต้อง sync กันเองด้วยมือ ไม่มีตัว generate schema ร่วมกันระหว่าง
+// โค้ดเบส Go กับ TypeScript ดังนั้น field ที่เพิ่มฝั่งใดฝั่งหนึ่งต้องมาเพิ่ม
+// ที่นี่ด้วย
 
 export type MessageType =
   | "heartbeat"
@@ -21,24 +21,23 @@ export interface Envelope {
 export interface HeartbeatPayload {
   agent_id: string;
   uptime_seconds: number;
-  // Reported by every agent build since internal/version was added — older
-  // already-deployed agents that predate this simply omit the field, which
-  // ws/server.ts treats as "unknown, don't push an update" rather than
-  // guessing.
+  // รายงานมาโดย agent build ทุกตัวตั้งแต่มี internal/version — agent เก่าที่
+  // deploy มาก่อนหน้านั้นจะไม่มี field นี้เลย ซึ่ง ws/server.ts ถือว่าเป็น
+  // "ไม่รู้ ไม่ push update" แทนที่จะเดาเอา
   version?: string;
-  // SHA256 of the agent's own currently-loaded agent.yaml, reported since
-  // internal/configpush was added — older agents that predate it simply omit
-  // the field, same "unknown, don't push anything" handling as version.
+  // SHA256 ของ agent.yaml ที่ agent โหลดอยู่ตอนนี้ รายงานมาตั้งแต่มี
+  // internal/configpush — agent เก่าที่มาก่อนหน้านั้นจะไม่มี field นี้เช่นกัน
+  // จัดการแบบเดียวกับ version คือ "ไม่รู้ ไม่ push อะไรทั้งนั้น"
   config_hash?: string;
 }
 
-// Server -> agent instruction to download and install a specific new build
-// of itself. See internal/transport/protocol.go's SelfUpdatePayload for the
-// full reasoning — this is a deliberately separate, more narrowly-trusted
-// path than CommandPayload below: it's never constructed from a
-// user-dispatched or AI-parsed action (CommandAction has no "self_update"
-// member, and neither does the LLM parser's action enum — see
-// llm/schema.ts), only from ws/server.ts's own version-check logic.
+// คำสั่งจากเซิร์ฟเวอร์ไปยัง agent ให้ดาวน์โหลดและติดตั้ง build ใหม่ของตัวเอง
+// ดู SelfUpdatePayload ใน internal/transport/protocol.go สำหรับเหตุผลเต็มๆ —
+// นี่คือ path ที่แยกออกมาโดยเจตนา และเชื่อถือได้แคบกว่า CommandPayload
+// ด้านล่าง: ไม่มีทางถูกสร้างจาก action ที่ user สั่งเองหรือที่ AI parse มา
+// (CommandAction ไม่มี member "self_update" และ action enum ของ LLM parser
+// ก็ไม่มีเช่นกัน — ดู llm/schema.ts) มาจาก logic เช็คเวอร์ชันของ ws/server.ts
+// เองเท่านั้น
 export interface SelfUpdatePayload {
   version: string;
   url: string;
@@ -47,15 +46,15 @@ export interface SelfUpdatePayload {
   signature: string;
 }
 
-// Server -> agent instruction to replace its own agent.yaml and, if
-// enable_run_script is set, ensure OPTIFLEET_ENABLE_RUN_SCRIPT=true is in the
-// service's environment, then restart. See
-// internal/transport/protocol.go's ConfigUpdatePayload for the full
-// reasoning — same deliberately separate, more narrowly-trusted path as
-// SelfUpdatePayload above (never constructed from a user-dispatched or
-// AI-parsed action), only ever built from ws/server.ts's own
-// config-convergence check comparing config_hash reported in each heartbeat
-// against agentConfig.ts's desired config.
+// คำสั่งจากเซิร์ฟเวอร์ไปยัง agent ให้แทนที่ agent.yaml ของตัวเอง และถ้า
+// enable_run_script ถูกตั้งไว้ ให้แน่ใจว่า
+// OPTIFLEET_ENABLE_RUN_SCRIPT=true อยู่ใน environment ของ service แล้ว
+// restart ดู ConfigUpdatePayload ใน internal/transport/protocol.go สำหรับ
+// เหตุผลเต็มๆ — path ที่แยกออกมาและเชื่อถือได้แคบกว่าเช่นเดียวกับ
+// SelfUpdatePayload ด้านบน (ไม่มีทางถูกสร้างจาก action ที่ user สั่งเองหรือ
+// ที่ AI parse มา) สร้างจาก config-convergence check ของ ws/server.ts เอง
+// เท่านั้น ที่เทียบ config_hash ที่รายงานมาในแต่ละ heartbeat กับ config ที่
+// ต้องการใน agentConfig.ts
 export interface ConfigUpdatePayload {
   config_yaml: string;
   config_sha256: string;
@@ -71,10 +70,10 @@ export interface DiskInfo {
   total_gb: number;
 }
 
-// One physical storage device — spec inventory (what drives exist, SSD or
-// HDD, how big), separate from DiskInfo's per-mount-point usage. See
-// internal/telemetry/types.go's PhysicalDiskInfo for why this doesn't join
-// onto DiskInfo directly. media_type is "SSD", "HDD", or "Unknown".
+// อุปกรณ์จัดเก็บข้อมูลทางกายภาพหนึ่งตัว — เป็น spec inventory (มีไดรฟ์อะไรบ้าง
+// เป็น SSD หรือ HDD ขนาดเท่าไหร่) แยกจาก usage ต่อ mount point ของ DiskInfo
+// ดู PhysicalDiskInfo ใน internal/telemetry/types.go ว่าทำไมถึงไม่รวมเข้ากับ
+// DiskInfo โดยตรง media_type คือ "SSD", "HDD" หรือ "Unknown"
 export interface PhysicalDiskInfo {
   model: string;
   media_type: string;
@@ -86,31 +85,30 @@ export interface ProcessInfo {
   name: string;
   cpu_percent: number;
   mem_mb: number;
-  // Windows-only "(Not Responding)" signal — see hungWindowPIDs in the Go
-  // agent. Always true on platforms without an equivalent OS check.
+  // สัญญาณ "(Not Responding)" ที่มีเฉพาะ Windows — ดู hungWindowPIDs ใน
+  // Go agent เป็น true เสมอบนแพลตฟอร์มที่ไม่มีการเช็คแบบนี้ของ OS
   responding: boolean;
 }
 
-// One currently-connected peripheral — a snapshot of "what's plugged in
-// right now" (internal/telemetry/types.go's DeviceInfo), not a
-// connect/disconnect history.
+// อุปกรณ์เสริมที่เชื่อมต่ออยู่ตอนนี้หนึ่งตัว — เป็น snapshot ของ "ตอนนี้เสียบ
+// อะไรอยู่บ้าง" (DeviceInfo ใน internal/telemetry/types.go) ไม่ใช่ประวัติ
+// การเชื่อมต่อ/ถอด
 export interface DeviceInfo {
   type: "usb" | "printer" | "monitor";
   name: string;
   detail?: string;
-  // Only populated where the OS exposes real identifying data for that
-  // device class (today: monitors, via EDID) — see collectMonitorsWindows.
+  // มีค่าเฉพาะตอนที่ OS มีข้อมูลระบุตัวตนจริงสำหรับอุปกรณ์ประเภทนั้น (ตอนนี้
+  // มีแค่จอมอนิเตอร์ ผ่าน EDID) — ดู collectMonitorsWindows
   serial_number?: string;
   model?: string;
   manufacturer?: string;
 }
 
-// One network adapter's full configuration — the same level of detail
-// Windows' own "ipconfig /all" shows, distinct from TelemetrySnapshot's own
-// bare ip_addresses list (which predates this and stays for the simple
-// "what's this machine's IP" case). DHCP/gateway/DNS/lease fields are
-// Windows-only (via Win32_NetworkAdapterConfiguration) and stay empty on
-// other platforms.
+// การตั้งค่าเต็มรูปแบบของ network adapter หนึ่งตัว — รายละเอียดระดับเดียวกับ
+// ที่ "ipconfig /all" ของ Windows แสดง แยกจาก ip_addresses ธรรมดาของ
+// TelemetrySnapshot เอง (ซึ่งมีมาก่อนและยังอยู่สำหรับ case ง่ายๆ "เครื่องนี้
+// IP อะไร") field DHCP/gateway/DNS/lease เป็นของ Windows เท่านั้น (ผ่าน
+// Win32_NetworkAdapterConfiguration) และจะว่างเปล่าบนแพลตฟอร์มอื่น
 export interface NetworkInterface {
   name: string;
   description?: string;
@@ -123,6 +121,17 @@ export interface NetworkInterface {
   dns_servers?: string[];
   lease_obtained?: string;
   lease_expires?: string;
+}
+
+// บัญชี OS user แบบ local (ไม่ใช่ domain) หนึ่งบัญชี — ข้อมูลเดียวกับที่
+// "net user" แสดง (LocalUserInfo ใน internal/telemetry/types.go) บวกกับว่า
+// บัญชีนั้นอยู่ในกลุ่ม Administrators ที่มีมาให้ในตัวหรือไม่ เฉพาะ Windows
+// เท่านั้นตอนนี้ แพลตฟอร์มอื่นรายงาน array ว่างเปล่า
+export interface LocalUserInfo {
+  username: string;
+  full_name?: string;
+  is_admin: boolean;
+  disabled: boolean;
 }
 
 export interface TelemetrySnapshot {
@@ -138,13 +147,12 @@ export interface TelemetrySnapshot {
   connected_devices: DeviceInfo[];
   hostname: string;
   ip_addresses: string[];
-  // The agent's real internet-facing address, from its own external lookup
-  // — see internal/telemetry/publicip.go. Distinct from ip_addresses
-  // (LAN-side interface addresses) and from whatever address this agent's
-  // WebSocket connection appears to come from (registry.ts's remoteIp),
-  // which is only the same thing if this server itself lives out on the
-  // internet rather than on the same LAN as the agent. Empty until the
-  // agent's background refresh completes.
+  // Address ที่หันหน้าออกอินเทอร์เน็ตจริงของ agent จากการ lookup ภายนอกของ
+  // ตัวเอง — ดู internal/telemetry/publicip.go แยกจาก ip_addresses (address
+  // ฝั่ง LAN interface) และแยกจาก address ที่ WebSocket connection ของ agent
+  // นี้ดูเหมือนจะมาจาก (registry.ts's remoteIp) ซึ่งจะเป็นค่าเดียวกันก็ต่อเมื่อ
+  // เซิร์ฟเวอร์นี้เองอยู่บนอินเทอร์เน็ต ไม่ใช่อยู่ LAN เดียวกับ agent ว่างเปล่า
+  // จนกว่า background refresh ของ agent จะเสร็จ
   public_ip: string;
   network_interfaces: NetworkInterface[];
   os: string;
@@ -154,6 +162,12 @@ export interface TelemetrySnapshot {
   model: string;
   manufacturer: string;
   cpu_model: string;
+  local_users: LocalUserInfo[];
+  // ใครกำลัง login เข้า interactive console session อยู่ตอนนี้ — แยกจาก
+  // local_users ที่บอกแค่ "มีบัญชีอะไรอยู่บ้าง" ว่างเปล่าแปลว่าไม่มีใคร login
+  // อยู่ตอนนี้ (หรือแพลตฟอร์มนี้ยังไม่รองรับการเก็บข้อมูลนี้) — ดู doc
+  // comment ของ CurrentUser ใน internal/telemetry/types.go
+  current_user: string;
 }
 
 export interface TelemetryPayload {
@@ -162,11 +176,10 @@ export interface TelemetryPayload {
 
 export type CommandAction = "kill_process" | "clean_temp" | "restart_host" | "shutdown_host" | "run_script" | "network_diagnostic";
 
-// CommandPayload is what the server sends to an agent. `signature` is
-// computed by commandSigner.ts over the same netstring-encoded canonical
-// form the Go agent recomputes on receipt (transport.CommandPayload.
-// CanonicalString) — see crypto/commandSigner.ts for why netstrings instead
-// of JSON.
+// CommandPayload คือสิ่งที่เซิร์ฟเวอร์ส่งไปยัง agent `signature` คำนวณโดย
+// commandSigner.ts จากรูปแบบ canonical เดียวกันที่เข้ารหัสด้วย netstring
+// ซึ่ง Go agent คำนวณซ้ำตอนรับ (transport.CommandPayload.CanonicalString) —
+// ดู crypto/commandSigner.ts ว่าทำไมถึงใช้ netstring แทน JSON
 export interface CommandPayload {
   id: string;
   action: CommandAction;
@@ -182,10 +195,10 @@ export interface CommandResultPayload {
   executed_unix: number;
 }
 
-// One incremental chunk (typically one line) of a long-running
-// network_diagnostic command's output as it's produced agent-side — see
-// internal/transport/protocol.go's CommandOutputPayload, which this mirrors.
-// Done=true marks the final chunk; Error carries a mid-stream failure.
+// ผลลัพธ์ทีละส่วน (ปกติคือบรรทัดเดียว) ของคำสั่ง network_diagnostic ที่รันนาน
+// ขณะที่ผลิตออกมาฝั่ง agent — ดู CommandOutputPayload ใน
+// internal/transport/protocol.go ซึ่งไฟล์นี้ mirror ตาม Done=true คือส่วน
+// สุดท้าย Error เก็บ failure ที่เกิดขึ้นระหว่างทาง
 export interface CommandOutputPayload {
   command_id: string;
   line: string;

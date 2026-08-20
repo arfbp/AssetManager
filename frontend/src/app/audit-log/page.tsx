@@ -12,10 +12,9 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-// action strings are dot-namespaced ("org.created", "org.status_changed",
-// ...) from server/src/api/routes.ts's recordAuditEvent calls — this just
-// turns them into something readable without needing a lookup table kept
-// in sync with every call site.
+// action string เป็นรูปแบบ dot-namespaced ("org.created", "org.status_changed",
+// ...) มาจากการเรียก recordAuditEvent ใน server/src/api/routes.ts — ฟังก์ชันนี้
+// แค่แปลงให้อ่านง่ายขึ้น โดยไม่ต้องทำ lookup table ที่ต้องคอย sync กับทุกจุดที่เรียกใช้
 function formatAction(action: string): string {
   return action
     .split(".")

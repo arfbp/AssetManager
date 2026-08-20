@@ -1,7 +1,7 @@
-// Plain SMTP via nodemailer — works with any provider (a company mail
-// server, Gmail with an app password, SendGrid/Mailgun's SMTP endpoints,
-// ...), so this doesn't lock the deployment into one vendor's API the way
-// the LINE Notify / Slack / Teams integrations do.
+// SMTP ธรรมดาผ่าน nodemailer — ใช้ได้กับผู้ให้บริการอีเมลไหนก็ได้ (mail
+// server ของบริษัท, Gmail แบบ app password, SMTP endpoint ของ
+// SendGrid/Mailgun ฯลฯ) จึงไม่ทำให้ deployment ผูกติดกับ API ของ vendor
+// รายใดรายหนึ่งเหมือนที่ integration ของ LINE Notify / Slack / Teams เป็น
 import nodemailer from "nodemailer";
 import type { EmailConfig, NotificationEvent } from "../types.js";
 
@@ -31,10 +31,10 @@ export async function sendEmail(cfg: EmailConfig, event: NotificationEvent): Pro
   });
 }
 
-// Distinct from sendEmail above: a transactional, per-recipient message
-// (one new org admin's setup link) rather than a fan-out alert to the
-// fixed ops recipient list in cfg.to — reuses the same SMTP transport/host
-// config, but the "to" address is per-call, not from EmailConfig.
+// แยกจาก sendEmail ด้านบน: เป็นข้อความแบบ transactional ต่อผู้รับรายคน
+// (setup link ของ org admin คนใหม่) ไม่ใช่การแจ้งเตือนแบบ fan-out ไปยัง
+// รายชื่อผู้รับ ops ตายตัวใน cfg.to — ใช้ SMTP transport/host config
+// เดียวกันซ้ำ แต่ address "to" มาจากแต่ละ call ไม่ได้มาจาก EmailConfig
 export async function sendSetupLinkEmail(cfg: EmailConfig, to: string, orgName: string, setupLink: string): Promise<void> {
   const transport = createTransport(cfg);
 

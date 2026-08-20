@@ -1,15 +1,14 @@
-// The admin-command counterpart to schema.ts's ParsedIntent — a separate,
-// equally fixed shape for requests about organizations/users rather than
-// devices. Registered as a second forced tool alongside emit_fleet_command
-// (see actionParser.ts) so one LLM call can recognize either kind of
-// request; the model picks exactly one tool per call, never both.
+// เป็นคู่กันกับ ParsedIntent ใน schema.ts แต่สำหรับคำสั่งด้าน admin — เป็น
+// โครงสร้างตายตัวแยกต่างหากสำหรับคำขอเกี่ยวกับ organization/user แทนที่จะเป็น
+// device ลงทะเบียนเป็น tool บังคับตัวที่สองคู่กับ emit_fleet_command
+// (ดู actionParser.ts) เพื่อให้ LLM เรียกครั้งเดียวแล้วแยกแยะได้ทั้งสองแบบ
+// โดยโมเดลจะเลือกใช้ tool เดียวต่อการเรียกหนึ่งครั้งเท่านั้น ไม่มีทางเลือกทั้งคู่
 //
-// Every admin action this resolves to either opens an already-validated
-// dashboard form pre-filled with best-effort extracted values (creation)
-// or requires an explicit human confirmation naming the resolved target
-// (everything else) — see security/adminGuardrail.ts. Nothing here is
-// trusted as an authorization decision by itself, same posture as
-// schema.ts's own doc comment.
+// ทุก admin action ที่ resolve ออกมาจะจบด้วยการเปิดฟอร์ม dashboard ที่ผ่านการ
+// validate แล้ว พร้อมกรอกค่าที่ดึงมาได้ล่วงหน้า (กรณีสร้างใหม่) หรือไม่ก็ต้องให้
+// มนุษย์ยืนยันชัดเจนโดยระบุชื่อ target ที่ resolve แล้ว (กรณีอื่นทั้งหมด) —
+// ดู security/adminGuardrail.ts ไม่มีส่วนไหนในนี้ที่ถูกเชื่อถือว่าเป็นการอนุมัติ
+// สิทธิ์ได้ด้วยตัวเอง จุดยืนเดียวกับ doc comment ของ schema.ts
 import { z } from "zod";
 import type OpenAI from "openai";
 
@@ -25,20 +24,19 @@ export const ADMIN_ACTIONS = [
   "generate_installer",
 ] as const;
 
-// Every `fields` sub-key is optional here (defaulted to "") — verified
-// live that Groq's own tool-schema validator (which runs before this zod
-// re-validation even sees the JSON) rejects the call outright if `fields`
-// is required to carry all 8 keys and the model, reasonably, omits the
-// ones that don't apply to whichever action it picked (e.g. emits
-// `"fields": {}` for suspend_organization) — this consistently 400'd as
-// tool_use_failed for exactly the non-creation actions, never reaching
-// evaluateAdminIntent at all. The JSON schema below matches (no `required`
-// list on the fields object) for the same reason.
+// sub-key ทุกตัวใน `fields` เป็น optional (default เป็น "") — ทดสอบจริงแล้วพบว่า
+// tool-schema validator ของ Groq เอง (ซึ่งทำงานก่อนที่ zod re-validation จะเห็น
+// JSON ด้วยซ้ำ) จะปฏิเสธ call ทั้งก้อนทันทีถ้าบังคับให้ `fields` ต้องมีครบทั้ง 8
+// key ในขณะที่โมเดลเลือกจะไม่ใส่ key ที่ไม่เกี่ยวกับ action ที่มันเลือก (เช่น ส่ง
+// `"fields": {}` มาสำหรับ suspend_organization) ซึ่งพฤติกรรมนี้ทำให้เกิด 400
+// แบบ tool_use_failed ซ้ำ ๆ เฉพาะกับ action ที่ไม่ใช่การสร้างใหม่ ไม่มีทางไปถึง
+// evaluateAdminIntent เลย JSON schema ด้านล่างจึงตั้งไว้แบบเดียวกัน (ไม่มี list
+// `required` บน object ของ fields) ด้วยเหตุผลเดียวกัน
 export const AdminParsedIntentSchema = z.object({
   action: z.enum(ADMIN_ACTIONS),
-  // The org name or username the action applies to — empty for the two
-  // creation actions (nothing to target yet) and for generate_installer
-  // when the caller means their own org.
+  // ชื่อ org หรือ username ที่ action นี้ใช้กับ — เป็นค่าว่างสำหรับ action
+  // สร้างใหม่สองตัว (ยังไม่มี target) และสำหรับ generate_installer เมื่อผู้เรียก
+  // หมายถึง org ของตัวเอง
   targetName: z.string().describe("The organization name or username this action applies to. Empty string if not applicable."),
   fields: z
     .object({
@@ -89,15 +87,13 @@ export const EMIT_ADMIN_COMMAND_TOOL: OpenAI.Chat.Completions.ChatCompletionTool
             "on a new machine', 'download the agent for this org'.",
         },
         targetName: { type: "string" },
-        // Deliberately no `required` list here (unlike every other object
-        // in this codebase's tool schemas) — Groq's own tool-call validator
-        // runs before this ever reaches AdminParsedIntentSchema.parse(),
-        // and rejecting the whole call for omitting fields that genuinely
-        // don't apply to the chosen action (e.g. `fields: {}` for
-        // suspend_organization) was verified live to make every non-
-        // creation admin action fail outright. AdminParsedIntentSchema's
-        // own per-field `.default("")` normalizes whatever partial object
-        // does arrive.
+        // ตั้งใจไม่ใส่ list `required` ตรงนี้ (ต่างจาก object อื่น ๆ ทุกตัวใน tool
+        // schema ของโค้ดนี้) — tool-call validator ของ Groq เองทำงานก่อนที่จะถึง
+        // AdminParsedIntentSchema.parse() และการปฏิเสธทั้ง call เพราะขาด field
+        // ที่ไม่เกี่ยวกับ action ที่เลือกจริง ๆ (เช่น `fields: {}` สำหรับ
+        // suspend_organization) ทดสอบจริงแล้วพบว่าทำให้ admin action ที่ไม่ใช่
+        // การสร้างใหม่ล้มเหลวทุกครั้ง `.default("")` ของแต่ละ field ใน
+        // AdminParsedIntentSchema จะช่วย normalize object บางส่วนที่ส่งมาเอง
         fields: {
           type: "object",
           properties: {

@@ -10,10 +10,10 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-// windowsServiceController talks to the Windows Service Control Manager
-// directly via golang.org/x/sys/windows/svc/mgr, rather than shelling out to
-// sc.exe and parsing text output — the SCM API is the robust option and the
-// agent already runs with the privilege it needs (LocalSystem) to use it.
+// windowsServiceController คุยกับ Windows Service Control Manager ตรง ๆ
+// ผ่าน golang.org/x/sys/windows/svc/mgr แทนที่จะ shell out ไปเรียก sc.exe
+// แล้ว parse text output — API ของ SCM เป็นทางเลือกที่ robust กว่า และ
+// agent ก็รันด้วยสิทธิ์ที่ต้องใช้อยู่แล้ว (LocalSystem) เพื่อเรียกใช้ได้
 type windowsServiceController struct{}
 
 func NewServiceController() ServiceController {
@@ -44,8 +44,8 @@ func (windowsServiceController) Status(_ context.Context, name string) (ServiceS
 	case svc.Stopped:
 		return StateStopped, nil
 	default:
-		// StartPending, StopPending, Paused, etc. — treat as "not our
-		// business right now", the next poll will re-check.
+		// StartPending, StopPending, Paused ฯลฯ — ถือว่า "ยังไม่ใช่เรื่องของ
+		// เราตอนนี้" รอบ poll ถัดไปจะเช็คซ้ำเอง
 		return StateUnknown, nil
 	}
 }

@@ -1,17 +1,29 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { login } from "@/lib/session";
+import { getOrgBranding, resolveLogoUrl } from "@/lib/branding";
 
-// Deliberately a fixed dark "tech" treatment regardless of the app's own
-// light/dark toggle — same reasoning as AppShell's sidebar (see its own doc
-// comment): a login screen is seen once per session, before any theme
-// preference has even loaded, so it doesn't need to track it.
+// ตั้งใจให้เป็นธีมมืดแบบ "tech" ตายตัว ไม่สนสวิตช์ light/dark ของแอป —
+// เหตุผลเดียวกับ sidebar ใน AppShell (ดู doc comment ของมัน): หน้าล็อกอิน
+// จะเห็นแค่ครั้งเดียวต่อ session และเห็นก่อนที่ theme preference จะโหลด
+// เสร็จด้วยซ้ำ จึงไม่จำเป็นต้องตามธีม
 export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrgBranding().then((branding) => {
+      if (!cancelled && branding?.logoUrl) setLogoUrl(resolveLogoUrl(branding.logoUrl));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -30,9 +42,9 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#060c18] p-4">
-      {/* Ambient glow + circuit-grid texture — the "tech" backdrop. Pure CSS,
-          no images: two radial gradients for the glow, a repeating linear
-          gradient pair for the grid lines. */}
+      {/* พื้นหลังแบบ "tech" — แสงฟุ้ง + ลายเส้นกริดวงจร ใช้ CSS ล้วนไม่มีรูป
+          ภาพ: radial gradient สองอันสำหรับแสงฟุ้ง กับ linear gradient
+          ซ้ำๆ สำหรับเส้นกริด */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
@@ -58,7 +70,7 @@ export function LoginForm({ onSuccess }: { onSuccess: (username: string) => void
       >
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1957c2]/30 to-[#06b6f2]/20 shadow-[0_0_24px_rgba(6,182,242,0.25)]">
-            <img src="/optifleet-mark.svg" alt="OptiFleet AI" className="h-7 w-auto" />
+            <img src={logoUrl ?? "/optifleet-mark.svg"} alt="OptiFleet AI" className="h-7 w-auto" />
           </div>
           <div>
             <h1 className="font-display text-lg font-bold text-white">OptiFleet AI</h1>

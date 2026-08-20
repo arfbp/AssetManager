@@ -18,10 +18,10 @@ interface LocatedGroup {
   devices: DeviceLocationEntry[];
 }
 
-// Devices sharing one resolved (lat, lon) get ONE marker, not overlapping
-// stacked pins — the normal case for a LAN-deployed fleet, where every
-// device behind the same office router resolves to the same public IP and
-// therefore the exact same coordinate.
+// อุปกรณ์ที่ resolve พิกัด (lat, lon) ออกมาตรงกันจะได้หมุดเดียว ไม่ใช่หมุด
+// ซ้อนทับกันหลายอัน — เป็นกรณีปกติของฟลีตที่ deploy บน LAN ที่ทุกเครื่อง
+// อยู่หลัง router สำนักงานเดียวกัน จึง resolve ออกมาเป็น public IP และ
+// พิกัดเดียวกันเป๊ะ
 function groupByCoordinate(devices: DeviceLocationEntry[]): LocatedGroup[] {
   const groups = new Map<string, LocatedGroup>();
   for (const d of devices) {

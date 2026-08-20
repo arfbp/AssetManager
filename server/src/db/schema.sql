@@ -1,10 +1,10 @@
--- OptiFleet AI Central Server: persistence schema.
--- Idempotent (IF NOT EXISTS everywhere) — safe to run repeatedly via
--- `npm run db:migrate`. See src/db/migrate.ts.
+-- OptiFleet AI Central Server: persistence schema
+-- Idempotent (มี IF NOT EXISTS ทุกที่) — รันซ้ำได้อย่างปลอดภัยผ่าน
+-- `npm run db:migrate` ดู src/db/migrate.ts
 
--- Needed for gen_random_uuid() used by the users table below — built into
--- Postgres core on some versions, an extension on others, so declare it
--- explicitly rather than relying on which one this database happens to be.
+-- จำเป็นสำหรับ gen_random_uuid() ที่ตาราง users ด้านล่างใช้ — บาง version
+-- ของ Postgres มีในตัวอยู่แล้ว บาง version ต้องใช้ extension จึง declare
+-- ไว้อย่างชัดเจนแทนที่จะเดาว่า database นี้เป็นแบบไหน
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -15,10 +15,11 @@ CREATE TABLE IF NOT EXISTS agents (
   last_telemetry JSONB
 );
 
--- Append-only time series, one row per telemetry snapshot reported by an
--- agent (normal mode every 5m, alert mode every 10s per the agent's
--- dynamic poller — see internal/telemetry/poller.go). `agents.last_telemetry`
--- stays the fast "current state" read; this table is the history behind it.
+-- Time series แบบ append-only หนึ่งแถวต่อ telemetry snapshot ที่ agent
+-- รายงานมา (normal mode ทุก 5 นาที, alert mode ทุก 10 วินาที ตาม dynamic
+-- poller ของ agent — ดู internal/telemetry/poller.go) `agents.last_telemetry`
+-- ยังคงเป็นค่าที่อ่านได้เร็วสำหรับ "สถานะปัจจุบัน" ตารางนี้คือประวัติที่อยู่
+-- เบื้องหลังมัน
 CREATE TABLE IF NOT EXISTS telemetry_snapshots (
   id          BIGSERIAL PRIMARY KEY,
   agent_id    TEXT NOT NULL REFERENCES agents(agent_id),
@@ -50,12 +51,12 @@ CREATE TABLE IF NOT EXISTS command_history (
 CREATE INDEX IF NOT EXISTS idx_command_history_dispatched_at
   ON command_history (dispatched_at DESC);
 
--- Real per-user accounts, replacing the single shared OPTIFLEET_DASHBOARD_TOKEN.
--- Accounts are created by an administrator via `npm run user:create` — there
--- is no public self-registration endpoint, matching the rest of this
--- project's "no capability beyond what an operator explicitly configured"
--- philosophy (see internal/groups/deviceGroups.ts's doc comment for the same
--- principle on the agent side).
+-- บัญชีของแต่ละ user จริงๆ มาแทนที่ OPTIFLEET_DASHBOARD_TOKEN เดียวที่ใช้
+-- ร่วมกัน บัญชีถูกสร้างโดย administrator ผ่าน `npm run user:create` — ไม่มี
+-- endpoint ให้ self-registration แบบสาธารณะ ตรงกับปรัชญา "ไม่มีความสามารถ
+-- ใดๆ นอกเหนือจากที่ operator ตั้งค่าไว้อย่างชัดเจน" ของโปรเจกต์นี้ (ดู doc
+-- comment ของ internal/groups/deviceGroups.ts สำหรับหลักการเดียวกันฝั่ง
+-- agent)
 CREATE TABLE IF NOT EXISTS users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username      TEXT NOT NULL UNIQUE,
@@ -63,32 +64,32 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Role-based access control: 'admin' can dispatch commands, manage assets,
--- AND manage other user accounts; 'it_support' can dispatch commands and
--- manage assets but not touch user accounts; 'viewer' is read-only
--- everywhere (blocked at security/roles.ts's requireRole, not just hidden
--- in the UI — a Viewer's browser calling the dispatch endpoints directly
--- gets a real 403, same as anyone else). Existing rows default to 'admin'
--- on migration — this project only ever had one bootstrap account before
--- roles existed, and defaulting it to anything less than admin would be a
--- surprise lockout, not a safe default.
+-- Role-based access control: 'admin' dispatch คำสั่งได้ จัดการ asset ได้
+-- และจัดการบัญชี user อื่นได้ด้วย; 'it_support' dispatch คำสั่งและจัดการ
+-- asset ได้แต่แตะบัญชี user ไม่ได้; 'viewer' อ่านได้อย่างเดียวทุกที่ (ถูก
+-- บล็อกที่ requireRole ใน security/roles.ts ไม่ใช่แค่ซ่อนไว้ใน UI —
+-- เบราว์เซอร์ของ Viewer ที่เรียก dispatch endpoint ตรงๆ จะได้ 403 จริง
+-- เหมือนคนอื่นทุกคน) แถวที่มีอยู่แล้วจะ default เป็น 'admin' ตอน migration
+-- — โปรเจกต์นี้เคยมีแค่บัญชี bootstrap เดียวก่อนที่ role จะมีอยู่ และการ
+-- default ให้เป็นอะไรที่ต่ำกว่า admin จะเป็นการล็อกเอาต์แบบไม่ทันตั้งตัว
+-- ไม่ใช่ default ที่ปลอดภัย
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'it_support', 'viewer'));
 
--- Basic profile fields, separate from the login identifier (username).
--- Nullable — existing accounts predate this and have neither; the "Add
--- user" form requires first/last name going forward, but nothing here
--- forces a backfill on accounts that already exist.
+-- Field ข้อมูลโปรไฟล์พื้นฐาน แยกจาก identifier สำหรับ login (username)
+-- เป็น nullable — บัญชีที่มีอยู่ก่อนหน้านี้ไม่มีค่าทั้งสองนี้; ฟอร์ม "Add
+-- user" ต่อจากนี้ไปจะบังคับกรอกชื่อ/นามสกุล แต่ตรงนี้ไม่ได้บังคับ backfill
+-- ให้บัญชีที่มีอยู่แล้ว
 ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
 
--- Session tokens are opaque random strings, not JWTs — revocation is just a
--- DELETE, and validity is a DB lookup rather than trusting a signature the
--- server can't invalidate early. Stored in Postgres (not memory) so a
--- session survives a server restart instead of forcing every operator to
--- log in again each time.
+-- Session token เป็น opaque random string ไม่ใช่ JWT — การเพิกถอนคือแค่
+-- DELETE และความถูกต้องคือการ lookup DB แทนที่จะเชื่อ signature ที่
+-- เซิร์ฟเวอร์ invalidate ก่อนเวลาไม่ได้ เก็บใน Postgres (ไม่ใช่หน่วยความจำ)
+-- เพื่อให้ session รอด server restart แทนที่จะบังคับให้ operator ทุกคน
+-- login ใหม่ทุกครั้ง
 CREATE TABLE IF NOT EXISTS sessions (
   token      TEXT PRIMARY KEY,
   user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -98,15 +99,15 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
 
--- Asset registry — inventory/procurement metadata an operator enters by
--- hand (location, who it's checked out to, order number, end-of-life date),
--- layered on top of whatever the agent already reports automatically
--- (serial number, model, manufacturer — internal/telemetry's
--- collectHardwareInfo, part of every telemetry snapshot already stored in
--- agents.last_telemetry). agent_id is deliberately NOT a foreign key to
--- agents(agent_id): an asset can exist before the device it describes has
--- ever connected (bought, not yet deployed — "ready_to_deploy" below), so
--- forcing agents to exist first would break that case.
+-- Asset registry — ข้อมูล inventory/procurement ที่ operator กรอกเอง
+-- (location, เช็คเอาต์ให้ใคร, order number, end-of-life date) ซ้อนอยู่บน
+-- สิ่งที่ agent รายงานเองอัตโนมัติอยู่แล้ว (serial number, model,
+-- manufacturer — collectHardwareInfo ของ internal/telemetry ส่วนหนึ่งของ
+-- ทุก telemetry snapshot ที่เก็บไว้ใน agents.last_telemetry อยู่แล้ว)
+-- agent_id ตั้งใจไม่ทำเป็น foreign key ไปยัง agents(agent_id): asset สามารถ
+-- มีอยู่ได้ก่อนที่อุปกรณ์ที่มันอธิบายจะเคย connect (ซื้อมาแล้วแต่ยังไม่ได้
+-- deploy — "ready_to_deploy" ด้านล่าง) ดังนั้นการบังคับให้ agents ต้องมีอยู่
+-- ก่อนจะทำให้ case นี้พัง
 CREATE TABLE IF NOT EXISTS assets (
   asset_tag             TEXT PRIMARY KEY,
   agent_id              TEXT UNIQUE,
@@ -119,49 +120,47 @@ CREATE TABLE IF NOT EXISTS assets (
   expected_checkin_date DATE,
   eol_date              DATE,
   notes                 TEXT,
-  -- Entered by hand when an asset is registered before it's ever connected
-  -- (bought, sitting in a box, "ready_to_deploy") — the only way to record
-  -- a serial number ahead of time, since the *live* serial_number shown
-  -- elsewhere always comes from the linked agent's telemetry, never from
-  -- this table. Once a real agent connects and reports a matching serial,
-  -- db/persistence.ts's auto-registration links that agent to this same
-  -- row instead of creating a duplicate asset for the same physical device.
+  -- กรอกด้วยมือตอนลงทะเบียน asset ก่อนที่มันจะเคย connect (ซื้อมาแล้ว วางอยู่
+  -- ในกล่อง "ready_to_deploy") — เป็นทางเดียวที่จะบันทึก serial number ไว้
+  -- ล่วงหน้าได้ เพราะ serial_number *แบบสด* ที่แสดงในที่อื่นจะมาจาก
+  -- telemetry ของ agent ที่เชื่อมโยงกันเสมอ ไม่เคยมาจากตารางนี้ เมื่อ agent
+  -- จริงเชื่อมต่อเข้ามาและรายงาน serial ที่ตรงกัน auto-registration ของ
+  -- db/persistence.ts จะเชื่อม agent นั้นเข้ากับแถวเดิมนี้ แทนที่จะสร้าง
+  -- asset ซ้ำสำหรับอุปกรณ์จริงตัวเดียวกัน
   manual_serial_number  TEXT,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ADD COLUMN IF NOT EXISTS handles the case where the assets table already
--- existed from before this column was introduced — CREATE TABLE IF NOT
--- EXISTS above is a no-op against an existing table, so it alone would never
--- backfill new columns onto an already-provisioned database.
+-- ADD COLUMN IF NOT EXISTS จัดการกรณีที่ตาราง assets มีอยู่แล้วก่อนที่คอลัมน์
+-- นี้จะถูกเพิ่มเข้ามา — CREATE TABLE IF NOT EXISTS ด้านบนเป็น no-op กับตาราง
+-- ที่มีอยู่แล้ว ดังนั้นแค่ตัวมันเองอย่างเดียวจะไม่มีวัน backfill คอลัมน์ใหม่
+-- ลงบน database ที่ provision ไปแล้วได้
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS manual_serial_number TEXT;
 
--- A 'computer' asset is one side of the agent_id link above — its
--- manufacturer/model/serial are always read live from the linked agent's
--- telemetry (assetsStore.ts's listAssets join), never stored here. A
--- 'peripheral' asset (a monitor, for example) has no telemetry connection of
--- its own to join against, so its identity has to be captured as a static
--- snapshot at registration time instead — hence the two columns below exist
--- purely for that case, and stay NULL for 'computer' rows. parent_agent_id
--- notes which computer the peripheral was connected through when
--- registered — informational only (the peripheral can move between
--- machines afterward without updating this), so deliberately not a foreign
--- key onto agents(agent_id).
+-- Asset ประเภท 'computer' คือฝั่งหนึ่งของ agent_id link ด้านบน —
+-- manufacturer/model/serial ของมันอ่านสดจาก telemetry ของ agent ที่เชื่อมโยง
+-- กันเสมอ (join ใน listAssets ของ assetsStore.ts) ไม่เคยเก็บไว้ที่นี่ Asset
+-- ประเภท 'peripheral' (เช่นจอมอนิเตอร์) ไม่มี telemetry connection ของ
+-- ตัวเองให้ join ดังนั้นตัวตนของมันต้องถูกจับไว้เป็น static snapshot ตอน
+-- ลงทะเบียนแทน — จึงเป็นเหตุผลที่มีสองคอลัมน์ด้านล่างนี้ไว้เฉพาะสำหรับ case
+-- นั้น และจะเป็น NULL สำหรับแถวประเภท 'computer' parent_agent_id บันทึกว่า
+-- peripheral ตัวนี้ต่อผ่านคอมพิวเตอร์เครื่องไหนตอนลงทะเบียน — เป็นข้อมูล
+-- อ้างอิงเท่านั้น (peripheral ย้ายไปเครื่องอื่นได้ทีหลังโดยไม่ต้องอัปเดต
+-- ค่านี้) จึงตั้งใจไม่ทำเป็น foreign key ไปยัง agents(agent_id)
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS asset_type TEXT NOT NULL DEFAULT 'computer';
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS manufacturer TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS model TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS parent_agent_id TEXT;
 
--- Per-device incident log — currently just "a process stopped responding"
--- (Windows' own hung-window check, see internal/telemetry/hungwindows_windows.go),
--- but the `kind` column leaves room for other incident types later without
--- a schema change. One row per continuous episode, not one row per
--- telemetry poll: db/persistence.ts opens a row when a process is first
--- seen hung and closes it (sets resolved_at) once that process is next
--- seen responding again or has exited, tracked in an in-memory map keyed by
--- agent+pid+name so a process that's still hung across many polls doesn't
--- spam a new row every cycle.
+-- Incident log ต่ออุปกรณ์ — ตอนนี้มีแค่ "process หยุดตอบสนอง" (การเช็ค
+-- hung-window ของ Windows เอง ดู internal/telemetry/hungwindows_windows.go)
+-- แต่คอลัมน์ `kind` เผื่อพื้นที่ไว้สำหรับ incident type อื่นในอนาคตโดยไม่ต้อง
+-- แก้ schema หนึ่งแถวต่อหนึ่ง episode ต่อเนื่อง ไม่ใช่หนึ่งแถวต่อรอบ
+-- telemetry poll: db/persistence.ts เปิดแถวเมื่อเห็น process hang ครั้งแรก
+-- และปิดมัน (ตั้งค่า resolved_at) เมื่อ process นั้นกลับมาตอบสนองอีกครั้ง
+-- หรือ exit ไปแล้ว ติดตามด้วย map ในหน่วยความจำที่คีย์ด้วย agent+pid+name
+-- เพื่อไม่ให้ process ที่ยัง hang ต่อเนื่องหลายรอบ poll สแปมแถวใหม่ทุกรอบ
 CREATE TABLE IF NOT EXISTS device_incidents (
   id           BIGSERIAL PRIMARY KEY,
   agent_id     TEXT NOT NULL,
@@ -177,17 +176,16 @@ CREATE INDEX IF NOT EXISTS idx_device_incidents_agent_time
 CREATE INDEX IF NOT EXISTS idx_assets_agent_id ON assets (agent_id);
 CREATE INDEX IF NOT EXISTS idx_assets_manual_serial_number ON assets (manual_serial_number) WHERE manual_serial_number IS NOT NULL;
 
--- Which computer(s) a "peripheral" asset has actually been connected
--- through over time — assets.parent_agent_id only ever holds the most
--- recent one (see its own column comment: "not kept in sync afterward"),
--- which stopped being good enough once an operator asked to move a monitor
--- between machines and still see where it used to live. One row per
--- continuous connection episode: db/persistence.ts closes the open row
--- (disconnected_at) when a peripheral's serial number is next seen on a
--- *different* agent's connected_devices (or stops appearing anywhere) and
--- opens a new one for wherever it shows up now. Not a foreign key onto
--- agents(agent_id) for the same reason assets.agent_id isn't: a peripheral
--- can outlive the specific computer it was once connected through.
+-- คอมพิวเตอร์เครื่องไหนบ้างที่ asset ประเภท "peripheral" เคยต่อผ่านมาตาม
+-- เวลา — assets.parent_agent_id เก็บได้แค่ตัวล่าสุดเท่านั้น (ดู comment ของ
+-- คอลัมน์นั้นเอง: "ไม่ได้ sync ต่อทีหลัง") ซึ่งไม่พอแล้วเมื่อ operator
+-- ต้องการย้ายจอมอนิเตอร์ไปเครื่องอื่นแต่ยังอยากเห็นว่ามันเคยอยู่ที่ไหนมาก่อน
+-- หนึ่งแถวต่อหนึ่ง connection episode ต่อเนื่อง: db/persistence.ts จะปิดแถว
+-- ที่เปิดอยู่ (disconnected_at) เมื่อ serial number ของ peripheral ไปโผล่ใน
+-- connected_devices ของ agent *ตัวอื่น* (หรือหายไปจากทุกที่) แล้วเปิดแถวใหม่
+-- ให้กับที่ที่มันไปโผล่ตอนนี้ ไม่ทำเป็น foreign key ไปยัง agents(agent_id)
+-- ด้วยเหตุผลเดียวกับที่ assets.agent_id ไม่ทำ: peripheral อยู่ได้นานกว่า
+-- คอมพิวเตอร์เครื่องที่มันเคยต่อผ่าน
 CREATE TABLE IF NOT EXISTS asset_connection_history (
   id              BIGSERIAL PRIMARY KEY,
   asset_tag       TEXT NOT NULL REFERENCES assets(asset_tag) ON DELETE CASCADE,
@@ -199,22 +197,21 @@ CREATE TABLE IF NOT EXISTS asset_connection_history (
 CREATE INDEX IF NOT EXISTS idx_asset_connection_history_asset
   ON asset_connection_history (asset_tag, connected_at DESC);
 
--- The public IP an agent's WebSocket connection actually came from (see
--- ws/server.ts's connection handler) — the input to IP geolocation below.
--- For a LAN-deployed fleet this is usually the office's single outbound
--- public IP shared by every device behind it, not a per-device address; it
--- still gets stored per-agent because a remote/home-office device *would*
--- have its own distinct one, and there's no way to know which case applies
--- without recording it.
+-- Public IP จริงที่ WebSocket connection ของ agent มาจาก (ดู connection
+-- handler ใน ws/server.ts) — เป็น input ให้กับ IP geolocation ด้านล่าง
+-- สำหรับ fleet ที่ deploy บน LAN ค่านี้มักจะเป็น public IP ตัวเดียวของ
+-- ออฟฟิศที่ทุกอุปกรณ์ข้างหลังมันใช้ร่วมกัน ไม่ใช่ address ต่ออุปกรณ์ แต่ก็ยัง
+-- เก็บแยกต่อ agent เพราะอุปกรณ์ remote/home-office *จะ* มี address ของ
+-- ตัวเองที่แตกต่างออกไป และไม่มีทางรู้ได้ว่า case ไหนใช้อยู่ถ้าไม่บันทึกไว้
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS remote_ip TEXT;
 
--- Caches src/geolocation/ipGeo.ts's external lookups keyed by IP, since a
--- given IP's location essentially never changes and multiple agents behind
--- the same office network legitimately share one row. is_private marks an
--- RFC1918/loopback address that was never sent to the external API at all
--- (nothing to look up — see ipGeo.ts's isPrivateIp) rather than a failed
--- lookup, so the UI can tell "not resolvable in principle" apart from
--- "lookup didn't happen yet."
+-- Cache ผลลัพธ์ external lookup ของ src/geolocation/ipGeo.ts คีย์ด้วย IP
+-- เพราะ location ของ IP หนึ่งแทบไม่เคยเปลี่ยนเลย และ agent หลายตัวที่อยู่
+-- หลัง office network เดียวกันก็แชร์แถวเดียวกันได้อย่างถูกต้อง is_private
+-- ใช้ระบุ address แบบ RFC1918/loopback ที่ไม่เคยถูกส่งไปยัง external API
+-- เลย (ไม่มีอะไรต้อง lookup — ดู isPrivateIp ของ ipGeo.ts) แยกจากกรณี
+-- lookup ล้มเหลว เพื่อให้ UI แยกแยะ "ไม่มีทาง resolve ได้ตั้งแต่แรก" กับ
+-- "ยังไม่ได้ lookup" ออกจากกันได้
 CREATE TABLE IF NOT EXISTS ip_geolocation_cache (
   ip           TEXT PRIMARY KEY,
   city         TEXT,
@@ -226,9 +223,10 @@ CREATE TABLE IF NOT EXISTS ip_geolocation_cache (
   looked_up_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Matches the level of detail a "what's my IP" site typically shows
--- (whatismyip.com-style: ISP, ASN, postal code, timezone alongside
--- city/region/country) — the Live Tracking page's per-device IP info panel.
+-- ระดับรายละเอียดเทียบเท่าเว็บ "what's my IP" ทั่วไป (สไตล์
+-- whatismyip.com: ISP, ASN, รหัสไปรษณีย์, timezone คู่กับ
+-- city/region/country) — ใช้กับ panel ข้อมูล IP ต่ออุปกรณ์ในหน้า Live
+-- Tracking
 ALTER TABLE ip_geolocation_cache ADD COLUMN IF NOT EXISTS isp TEXT;
 ALTER TABLE ip_geolocation_cache ADD COLUMN IF NOT EXISTS asn TEXT;
 ALTER TABLE ip_geolocation_cache ADD COLUMN IF NOT EXISTS zip TEXT;

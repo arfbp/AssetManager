@@ -1,15 +1,16 @@
-# Desired agent.yaml for the fleet - GLOBAL deployment (dist-agent-deploy-global/).
-# Whatever's in THIS file is authoritative for every already-installed agent,
-# the same convergence model self-update uses for the binary itself (see
-# agentBuild.ts / registry.ts's needsUpdate doc comment) - edit this file,
-# restart optifleet-server, and every connected agent converges to match on
-# its next heartbeat. See agentConfig.ts for how it's loaded and diffed.
+# ค่า agent.yaml ที่ต้องการสำหรับทั้งฟลีต - deploy แบบ GLOBAL
+# (dist-agent-deploy-global/) สิ่งที่อยู่ในไฟล์นี้เป็นค่าที่ถูกต้องสำหรับ
+# เอเจนต์ทุกเครื่องที่ติดตั้งไว้แล้ว ใช้โมเดล convergence เดียวกับที่
+# self-update ใช้กับตัว binary เอง (ดู doc comment ของ needsUpdate ใน
+# agentBuild.ts / registry.ts) - แก้ไฟล์นี้ รีสตาร์ต optifleet-server แล้ว
+# ทุกเอเจนต์ที่เชื่อมต่ออยู่จะ converge มาตรงกันในรอบ heartbeat ถัดไป ดู
+# agentConfig.ts ว่าโหลดและ diff อย่างไร
 #
-# ca_cert_path trusts optifleet-cert.pem shipped alongside agent.yaml in every
-# global-deploy install - a self-signed certificate for the VPS IP (not a
-# real CA-issued certificate; see dist-agent-deploy-global/README.txt). Every
-# install via install.ps1 uses the identical C:\ProgramData\OptiFleetAgent
-# path, so this one file is valid for the whole fleet, not just one machine.
+# ca_cert_path เชื่อถือ optifleet-cert.pem ที่แนบมากับ agent.yaml ในทุกการ
+# ติดตั้งแบบ global-deploy - เป็น certificate self-signed สำหรับ IP ของ VPS
+# (ไม่ใช่ certificate จาก CA จริง; ดู dist-agent-deploy-global/README.txt)
+# ทุกการติดตั้งผ่าน install.ps1 ใช้ path C:\ProgramData\OptiFleetAgent
+# เดียวกันหมด ไฟล์นี้ไฟล์เดียวจึงใช้ได้กับทั้งฟลีต ไม่ใช่แค่เครื่องเดียว
 
 service:
   name: OptiFleetAIAgent
@@ -39,12 +40,12 @@ logging:
   max_age_days: 30
 
 commands:
-  # run_script enabled fleet-wide via config-push, deliberately - needed so
-  # the dashboard/admin can dispatch an explicit, non-NL software-install
-  # script (e.g. a Ninite silent install) to a chosen device. Still gated by
-  # OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH server-side and by the
-  # OPTIFLEET_ENABLE_RUN_SCRIPT env var this same config-push sets on the
-  # service - see internal/configpush.
+  # เปิด run_script ทั้งฟลีตผ่าน config-push โดยตั้งใจ - จำเป็นเพื่อให้
+  # แดชบอร์ด/แอดมินส่งสคริปต์ติดตั้งซอฟต์แวร์ที่ระบุชัดเจน (ไม่ผ่านภาษา
+  # ธรรมชาติ เช่น Ninite silent install) ไปยังเครื่องที่เลือกได้ ยังถูกกั้น
+  # ด้วย OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH ฝั่งเซิร์ฟเวอร์ และ env var
+  # OPTIFLEET_ENABLE_RUN_SCRIPT ที่ config-push ตัวเดียวกันนี้ตั้งให้ service
+  # - ดู internal/configpush
   allowed:
     - kill_process
     - clean_temp
@@ -58,9 +59,9 @@ commands:
     - "C:\\Windows\\Temp"
   script_timeout: 5m
   max_script_bytes: 32768
-  # Bumped from 16384 for Uninstall Software's installed-programs scan — a
-  # machine with 150+ installed programs' name/version/publisher/uninstall
-  # strings as JSON can exceed 16KB comfortably.
+  # เพิ่มจาก 16384 เพื่อรองรับการสแกนรายการโปรแกรมที่ติดตั้งของ
+  # Uninstall Software — เครื่องที่มีโปรแกรมติดตั้งอยู่ 150+ ตัว ข้อมูล
+  # name/version/publisher/uninstall string เป็น JSON เกิน 16KB ได้สบายๆ
   max_script_output_bytes: 65536
 
 self_heal:

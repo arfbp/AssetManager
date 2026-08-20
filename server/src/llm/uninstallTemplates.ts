@@ -1,8 +1,8 @@
-// Vetted uninstall commands keyed by application name. The LLM parser
-// extracts *which* app the operator named (schema.ts's `target` field) —
-// it never authors the actual removal command. If an app isn't in this
-// table, the request is rejected rather than letting the model improvise
-// a script; add an entry (and get it reviewed) instead of relaxing that.
+// คำสั่งถอนการติดตั้งที่ผ่านการตรวจสอบแล้ว จัดเก็บตามชื่อแอปพลิเคชัน LLM parser
+// มีหน้าที่แค่ดึงว่า "แอปไหน" ที่ผู้ควบคุมระบุมา (field `target` ใน schema.ts)
+// — ไม่มีทางเขียนคำสั่งถอนการติดตั้งจริงเอง ถ้าแอปไม่มีอยู่ในตารางนี้ คำขอจะถูก
+// ปฏิเสธ แทนที่จะให้โมเดล improvise สคริปต์เอง หากต้องเพิ่มแอปใหม่ให้เพิ่ม entry
+// (แล้วให้รีวิว) แทนการผ่อนปรนกฎนี้
 export interface UninstallTemplate {
   interpreter: "powershell";
   script: string;

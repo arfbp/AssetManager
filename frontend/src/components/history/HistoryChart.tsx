@@ -19,16 +19,17 @@ interface Series {
 }
 
 /**
- * CPU/RAM/Disk trend for one device — all three are percentages sharing one
- * 0-100 axis, so this is a single-axis multi-line chart, never dual-axis
- * (see the dataviz skill's anti-patterns.md). Series color is assigned in a
- * fixed order (CPU, RAM, then each disk mount point alphabetically) and
- * never reassigned when the data changes, per the skill's categorical rule.
+ * กราฟแนวโน้ม CPU/RAM/Disk ของอุปกรณ์หนึ่งเครื่อง — ทั้งสามค่าเป็น
+ * เปอร์เซ็นต์ใช้แกน 0-100 ร่วมกัน จึงเป็นกราฟหลายเส้นแบบแกนเดียว ไม่ใช้
+ * dual-axis เด็ดขาด เพราะแกนคู่ทำให้อ่านค่าเทียบกันผิดได้ง่าย สีของแต่ละ
+ * series กำหนดตามลำดับตายตัว (CPU, RAM แล้วตามด้วย disk mount point เรียง
+ * ตามตัวอักษร) และไม่เปลี่ยนสีเมื่อข้อมูลเปลี่ยน เพื่อให้ผู้ใช้จำสีต่อ series
+ * ได้เสมอ
  *
- * A table view exists alongside the chart (toggle below) so every value is
- * reachable as text — this is also the mitigation for the reference
- * palette's own documented light-mode contrast warning on a few categorical
- * slots (aqua/yellow/magenta): identity never depends on hue alone here.
+ * มีมุมมองแบบตารางควบคู่กับกราฟ (สลับได้ด้านล่าง) เพื่อให้ทุกค่าอ่านเป็น
+ * ข้อความได้ — ส่วนนี้ยังช่วยแก้ปัญหา contrast ในโหมด light ที่ palette
+ * อ้างอิงเตือนไว้กับสี categorical บางช่อง (ฟ้าอมเขียว/เหลือง/ม่วงแดง)
+ * เพราะที่นี่ไม่ยึดสีเพียงอย่างเดียวในการบอกความหมาย
  */
 export function HistoryChart({ points }: { points: HistoryPoint[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -50,9 +51,9 @@ export function HistoryChart({ points }: { points: HistoryPoint[] }) {
       list.push({
         key: `disk-${mount}`,
         label: `Disk (${mount})`,
-        // Slots 1-2 are taken by CPU/RAM; disks continue the same fixed
-        // order from slot 3 onward, wrapping past slot 8 only if a device
-        // somehow has more than six partitions.
+        // ช่อง 1-2 ถูกจองให้ CPU/RAM แล้ว disk จะเรียงต่อจากช่อง 3 เป็นต้น
+        // ไปตามลำดับเดิม แล้ววนกลับหลังช่อง 8 เฉพาะกรณีที่อุปกรณ์มีมากกว่า
+        // หก partition
         colorVar: `var(--series-${3 + (i % 6)})`,
         values: points.map((p) => p.disks.find((d) => d.mount_point === mount)?.used_percent ?? null),
       });

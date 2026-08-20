@@ -1,13 +1,12 @@
-// Powers the dashboard's "AI Suggested Fix" button in the process manager.
-// Returns a recommendation only — it is never auto-applied. The operator
-// reviews the suggestion and reasoning, then clicks a separate "Apply"
-// action that goes through the same kill-process path as a manual force
-// close (api/routes.ts's POST /agents/:id/kill-process).
+// เป็นตัวขับปุ่ม "AI Suggested Fix" บน process manager ของ dashboard
+// คืนค่าเป็นคำแนะนำเท่านั้น — ไม่มีการ apply อัตโนมัติ ผู้ควบคุมต้องอ่าน
+// คำแนะนำและเหตุผลก่อน แล้วกดปุ่ม "Apply" แยกต่างหาก ซึ่งใช้ path เดียวกับการ
+// force close ด้วยตนเอง (POST /agents/:id/kill-process ใน api/routes.ts)
 import OpenAI from "openai";
 import { z } from "zod";
 import { log } from "../logger.js";
 
-// Groq's Chat Completions API is OpenAI-compatible — see actionParser.ts.
+// Groq's Chat Completions API รองรับรูปแบบเดียวกับ OpenAI — ดู actionParser.ts
 const client = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",

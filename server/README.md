@@ -1,259 +1,245 @@
 # OptiFleet Central Server
 
-Backend for the OptiFleet AI fleet: a WebSocket hub for the Go agents, an
-HTTP API for the dashboard, an LLM-based natural-language command parser
-(Claude API), and the security guardrail that decides what — if anything —
-actually gets sent to a device.
+Backend ของฟลีต OptiFleet AI: เป็น WebSocket hub สำหรับเอเจนต์ Go, HTTP API
+สำหรับแดชบอร์ด, ตัวแปลคำสั่งภาษาธรรมชาติด้วย LLM (ผ่าน Groq) และ security
+guardrail ที่ตัดสินใจว่าอะไรบ้าง — ถ้ามี — ที่จะถูกส่งไปยังอุปกรณ์จริง
 
-## Why Claude API, not OpenAI
+## ทำไมใช้ Groq ไม่ใช่เรียก Anthropic/OpenAI ตรงๆ
 
-This project already runs inside a Claude Code / Anthropic tooling context,
-so the LLM integration here targets the Claude API directly via the official
-`@anthropic-ai/sdk` (tool use with a forced, strict-schema tool call — see
-`src/llm/actionParser.ts`). If you need OpenAI instead, swap
-`src/llm/actionParser.ts` for the OpenAI SDK's function-calling equivalent —
-the rest of the pipeline (schema, guardrail, dispatch) is provider-agnostic
-and doesn't need to change.
+`src/llm/actionParser.ts` เรียก Groq's Chat Completions endpoint ที่เข้ากันได้
+กับ OpenAI ผ่าน SDK `openai` ตัวเดียวกัน แค่ override `baseURL` — ทำให้ได้ทั้ง
+ความเร็วของ inference บน Groq และความเข้ากันได้กับ ecosystem ของ OpenAI SDK
+(tool use, forced tool_choice, strict schema) โดยไม่ต้องเขียน client เอง
+ถ้าจะสลับไปเรียก provider อื่นที่มี API เข้ากันได้กับ OpenAI ก็แค่เปลี่ยน
+`baseURL` กับ API key ส่วนที่เหลือของ pipeline (schema, guardrail, dispatch)
+ไม่ผูกกับ provider ใดเป็นพิเศษ ไม่ต้องแก้อะไรเพิ่ม
 
-## The most important design decision here: the LLM never authors executable content
+## การตัดสินใจออกแบบที่สำคัญที่สุดในนี้: LLM ไม่มีสิทธิ์สร้างเนื้อหาที่รันได้เอง
 
-`src/llm/actionParser.ts` uses Claude's tool use with `tool_choice` forcing a
-single tool call and `strict: true` on the schema (`src/llm/schema.ts`). The
-model can only ever return five fixed fields — `action` (a closed enum),
-`target`, `scope`, `confirm`, `reasoning` — never free text, never a
-command the agent doesn't implement, and never a script body.
+`src/llm/actionParser.ts` ใช้ tool use ของ LLM โดยบังคับ `tool_choice` ให้
+เรียก tool เดียวเท่านั้น และตั้ง `strict: true` บน schema (`src/llm/schema.ts`)
+โมเดลตอบกลับได้แค่ 5 ฟิลด์ที่กำหนดไว้ตายตัวเท่านั้น — `action` (enum ปิด),
+`target`, `scope`, `confirm`, `reasoning` — ไม่มีทางตอบเป็นข้อความอิสระ
+ไม่มีทางสั่ง action ที่เอเจนต์ไม่รองรับ และไม่มีทางส่งเนื้อหาสคริปต์มาเองได้
 
-That's deliberate, and it's why `uninstall_software` works the way it does:
-the model extracts *which app* the operator named, but the actual removal
-command comes from a small, human-reviewed table
-(`src/llm/uninstallTemplates.ts`) keyed by app name. If an app isn't in that
-table, the request is rejected — the model never gets to improvise an
-uninstall script. The same principle blocks `run_script` from ever being
-dispatched via the natural-language path at all (see
-`src/security/guardrail.ts`): a script's content has no bounded shape the
-way `kill_process`'s PID/name does, so it can't be safely inferred from free
-text no matter how good the parser is. A real "run this script" flow needs a
-human to write and submit the script explicitly — that's a different
-endpoint this repo intentionally doesn't build yet.
+นี่คือความตั้งใจ และเป็นเหตุผลที่ `uninstall_software` ทำงานแบบที่เป็นอยู่:
+โมเดลแค่แยกแยะว่า *แอปไหน* ที่ผู้ใช้พูดถึง ส่วนคำสั่งลบจริงๆ มาจากตารางเล็กๆ
+ที่มนุษย์ตรวจสอบไว้แล้ว (`src/llm/uninstallTemplates.ts`) โดย key ด้วยชื่อแอป
+ถ้าแอปไม่อยู่ในตารางนั้น คำขอจะถูกปฏิเสธ — โมเดลไม่มีสิทธิ์แต่งสคริปต์ uninstall
+เอง หลักการเดียวกันนี้ยังกันไม่ให้ `run_script` ถูกสั่งผ่านช่องทางภาษาธรรมชาติ
+ได้เลย (ดู `src/security/guardrail.ts`): เนื้อหาสคริปต์ไม่มีรูปแบบที่จำกัด
+ขอบเขตได้แบบที่ PID/ชื่อของ `kill_process` มี จึงไม่มีทางอนุมานจากข้อความ
+อิสระได้อย่างปลอดภัย ไม่ว่าตัว parser จะดีแค่ไหน flow "รันสคริปต์นี้" ที่
+แท้จริงต้องให้มนุษย์เขียนและส่งสคริปต์เข้ามาตรงๆ — เป็น endpoint ที่ repo นี้
+ตั้งใจยังไม่สร้าง
 
-The parser's output is **never treated as an authorization decision** — see
-the trust-boundary comment at the top of `actionParser.ts`. Everything that
-matters (scope resolution, allowlist membership, blacklist scan,
-confirmation requirements) is re-derived independently in
-`src/security/guardrail.ts`, which is the only thing standing between "the
-model said so" and a signed command reaching a device.
+ผลลัพธ์จาก parser **ไม่เคยถูกถือเป็นการอนุมัติ** — ดู comment เรื่อง trust
+boundary ที่ต้นไฟล์ `actionParser.ts` ทุกอย่างที่สำคัญ (การไล่หา scope,
+การเป็นสมาชิก allowlist, การสแกน blacklist, ต้องขอ confirm หรือไม่) ถูก
+คำนวณใหม่อย่างเป็นอิสระใน `src/security/guardrail.ts` ซึ่งเป็นด่านเดียวที่
+คั่นระหว่าง "โมเดลบอกว่าโอเค" กับคำสั่งที่เซ็นแล้วจริงๆ ไปถึงอุปกรณ์
 
-## Request pipeline (`POST /api/command`)
+## เส้นทางคำขอ (`POST /api/command`)
 
 ```
-dashboard text
-  -> parseNaturalLanguageCommand()   Claude tool use, forced call, strict schema
-  -> evaluateParsedIntent()          guardrail: scope resolution, blacklist, confirmation gate
-  -> blocked:              422, nothing dispatched
-  -> needs_confirmation:   202 + pendingId, operator must POST /api/command/:id/confirm within 5 min
-  -> allowed:               dispatch immediately, signed + sent to every resolved target
+ข้อความจากแดชบอร์ด
+  -> parseNaturalLanguageCommand()   LLM tool use, บังคับเรียก, schema เข้มงวด
+  -> evaluateParsedIntent()          guardrail: ไล่หา scope, blacklist, ประตูขอ confirm
+  -> blocked:              422, ไม่ส่งอะไรออกไป
+  -> needs_confirmation:   202 + pendingId ผู้ใช้ต้อง POST /api/command/:id/confirm ภายใน 5 นาที
+  -> allowed:               ส่งออกทันที เซ็นแล้วส่งไปทุกเป้าหมายที่ไล่หาได้
 ```
 
-**When confirmation is required** (`src/security/guardrail.ts`):
-- `restart_host` / `uninstall_software`: always, unless the request text itself
-  explicitly confirmed *and* it targets exactly one device — any multi-device
-  destructive action gets a human review step regardless of phrasing.
-- `kill_process`: only when the resolved scope is 3+ devices (a mass action).
-- `clean_temp`: never — already bounded by the agent's own directory allowlist.
-- `run_script`: never reachable from this path at all (see above).
+**เมื่อไหร่ที่ต้องขอ confirm** (`src/security/guardrail.ts`):
+- `restart_host` / `uninstall_software`: ต้อง confirm เสมอ เว้นแต่ข้อความคำขอ
+  เองระบุ confirm มาชัดเจน *และ* เจาะจงอุปกรณ์เดียวเท่านั้น — action ทำลาย
+  ล้างที่กระทบหลายเครื่องต้องผ่านการตรวจสอบจากมนุษย์เสมอไม่ว่าจะพูดแบบไหน
+- `kill_process`: ขอ confirm เฉพาะเมื่อ scope ที่ไล่หาได้ครอบคลุม 3 เครื่อง
+  ขึ้นไป (action ระดับมวลชน)
+- `clean_temp`: ไม่ต้องขอเลย เพราะถูกจำกัดด้วย allowlist ไดเรกทอรีของเอเจนต์
+  เองอยู่แล้ว
+- `run_script`: ไม่มีทางถูกสั่งผ่านช่องทางนี้เลย (ดูด้านบน)
 
-## Wire compatibility with the Go agent
+## ความเข้ากันได้ของ wire format กับเอเจนต์ Go
 
-`src/protocol.ts` mirrors `internal/transport/protocol.go` on the agent by
-hand — there's no shared schema generator, so a field added on one side
-needs the same edit on the other.
+`src/protocol.ts` mirror `internal/transport/protocol.go` ฝั่งเอเจนต์ด้วยมือ
+— ไม่มี schema generator ที่ใช้ร่วมกัน ดังนั้นเวลาเพิ่มฟิลด์ฝั่งใดฝั่งหนึ่ง
+ต้องแก้อีกฝั่งให้ตรงกันเองด้วย
 
-**Command signing** (`src/crypto/commandSigner.ts`) uses a netstring-encoded
-canonical form (`"<byte-length>:<bytes>"`, Bencode-style), not JSON. A
-JSON-based canonical signing scheme would need to reproduce Go's
-`json.Marshal` byte-for-byte — including its default HTML-escaping of `<`,
-`>`, `&` — to get identical signatures across languages, which is a real
-footgun for exactly the kind of content a script parameter can contain.
-Netstrings need no escaping at all: every field declares its own byte
-length, so concatenation is unambiguous regardless of content. Both sides
-were updated together — see `internal/transport/protocol.go`'s
-`CanonicalString()` on the agent.
+**การเซ็นคำสั่ง** (`src/crypto/commandSigner.ts`) ใช้รูปแบบ canonical แบบ
+netstring (`"<byte-length>:<bytes>"`, สไตล์ Bencode) ไม่ใช่ JSON เพราะ scheme
+เซ็นแบบ canonical ที่อิง JSON ต้องทำให้ byte ตรงกับ `json.Marshal` ของ Go
+เป๊ะๆ รวมถึงการ escape `<`, `>`, `&` เป็น HTML ที่เป็นค่าเริ่มต้นของมันด้วย
+ถึงจะได้ลายเซ็นตรงกันข้ามภาษา ซึ่งเป็นจุดเสี่ยงจริงๆ สำหรับเนื้อหาแบบที่
+พารามิเตอร์สคริปต์อาจมี netstring ไม่ต้อง escape อะไรเลย เพราะทุกฟิลด์
+ประกาศความยาว byte ของตัวเองไว้ การต่อกันจึงไม่กำกวมไม่ว่าเนื้อหาจะเป็น
+อะไร ทั้งสองฝั่งถูกอัปเดตพร้อมกัน — ดู `CanonicalString()` ใน
+`internal/transport/protocol.go` ฝั่งเอเจนต์
 
-**Agent identification**: there's no separate handshake message — an
-agent's first `heartbeat` or `telemetry` message carries `agent_id`
-(its hostname), and `src/ws/server.ts` registers the connection under that ID
-at that point, matching how the Go agent's `transport.Client` is written.
+**การระบุตัวตนเอเจนต์**: ไม่มีข้อความ handshake แยกต่างหาก — ข้อความ
+`heartbeat` หรือ `telemetry` แรกของเอเจนต์จะพก `agent_id` (คือ hostname)
+มาด้วย และ `src/ws/server.ts` จะลงทะเบียนการเชื่อมต่อภายใต้ ID นั้นตอนนั้น
+ตรงกับที่ `transport.Client` ฝั่งเอเจนต์ Go เขียนไว้
 
-**kill_process by name**: natural-language requests name a process
-("the antivirus scanner"), not a PID. The agent's `kill_process` action
-(`internal/executor/executor.go`) was extended to accept either `params.pid`
-or `params.name` — a name resolves against the agent's live process list at
-execution time and refuses if it matches more than one running process
-(returns the PIDs so a human can disambiguate) rather than silently killing
-every match.
+**kill_process ด้วยชื่อ**: คำขอภาษาธรรมชาติมักระบุชื่อ process
+("โปรแกรมสแกนไวรัส") ไม่ใช่ PID action `kill_process` ของเอเจนต์
+(`internal/executor/executor.go`) ถูกขยายให้รับได้ทั้ง `params.pid` หรือ
+`params.name` — ชื่อจะถูกจับคู่กับรายการ process ที่กำลังรันอยู่จริงตอน
+execution และจะปฏิเสธถ้าตรงกับมากกว่าหนึ่ง process (คืน PID ทั้งหมดที่ตรง
+กลับมาให้มนุษย์เลือก) แทนที่จะฆ่าทุกตัวที่ตรงแบบเงียบๆ
 
-## Running
+## การรัน
 
 ```powershell
 cd server
 npm install
-cp .env.example .env    # then edit — see below
-cp config/device-groups.example.json config/device-groups.json   # then edit
-npm run dev              # tsx watch, for local development
-# or: npm run build && npm start
+cp .env.example .env    # แล้วแก้ค่า — ดูด้านล่าง
+cp config/device-groups.example.json config/device-groups.json   # แล้วแก้ค่า
+npm run dev              # tsx watch สำหรับพัฒนา local
+# หรือ: npm run build && npm start
 ```
 
-Node.js and npm were not available in the environment this was written in —
-install Node 20+ before running the commands above, and run `npm run
-typecheck` once dependencies are installed to catch anything version drift
-in `@anthropic-ai/sdk` might have introduced (the SDK's exact type surface
-for newer features like `output_config`/`strict`/`stop_details` can shift
-between versions — a few spots in `src/llm/` deliberately use local
-structural types instead of importing the SDK's own type names for exactly
-this reason, so a mismatch fails as a clear runtime/type error rather than
-a mysterious import failure).
+ต้องมี Node 20+ ติดตั้งไว้ก่อน และรัน `npm run typecheck` หลังติดตั้ง
+dependency เสร็จเพื่อจับความไม่ตรงกันของเวอร์ชันที่อาจเกิดขึ้น (บาง
+จุดใน `src/llm/` ตั้งใจใช้ structural type ของตัวเองแทนที่จะ import type
+จาก SDK โดยตรง เพื่อให้เวอร์ชันไม่ตรงกันแสดง error ที่ type/runtime ชัดเจน
+แทนที่จะพังแบบ import ล้มเหลวอย่างงงๆ)
 
-Required environment variables — see `.env.example` for the full list and
-comments:
+Environment variable ที่จำเป็น — ดู `.env.example` สำหรับรายการเต็มพร้อม
+คำอธิบาย:
 
-- `OPTIFLEET_AGENT_AUTH_TOKEN` — bearer token agents authenticate with. Must
-  match `OPTIFLEET_AUTH_TOKEN` on every agent (`configs/agent.yaml` /
-  `internal/config`).
-- `OPTIFLEET_HMAC_SECRET` — must exactly match the agent's
-  `OPTIFLEET_HMAC_SECRET`.
-- `ANTHROPIC_API_KEY` — or leave unset and use `ant auth login` / Workload
-  Identity Federation; the SDK's standard credential resolution applies.
-- `OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH` — independent server-side copy of
-  the agent's own run_script gate. Both must be true for `uninstall_software`
-  (the only path that reaches run_script) to work at all.
+- `OPTIFLEET_AGENT_AUTH_TOKEN` — bearer token ที่เอเจนต์ใช้ยืนยันตัวตน ต้อง
+  ตรงกับ `OPTIFLEET_AUTH_TOKEN` บนเอเจนต์ทุกเครื่อง (`configs/agent.yaml` /
+  `internal/config`)
+- `OPTIFLEET_HMAC_SECRET` — ต้องตรงกับ `OPTIFLEET_HMAC_SECRET` ของเอเจนต์
+  เป๊ะๆ
+- `GROQ_API_KEY` — คีย์ฟรีจาก https://console.groq.com/keys
+- `OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH` — ประตูฝั่งเซิร์ฟเวอร์ที่แยกต่างหาก
+  จากประตู run_script ของเอเจนต์เอง ต้องเป็น true ทั้งคู่ `uninstall_software`
+  (ทางเดียวที่ไปถึง run_script ได้) ถึงจะทำงานได้
 
-In production, set `NODE_ENV=production` and `OPTIFLEET_TLS_CERT_PATH` /
-`OPTIFLEET_TLS_KEY_PATH` — `src/config.ts` refuses to start otherwise rather
-than silently serving agents over plaintext `ws://`.
+ใน production ให้ตั้ง `NODE_ENV=production` และ `OPTIFLEET_TLS_CERT_PATH` /
+`OPTIFLEET_TLS_KEY_PATH` — `src/config.ts` จะปฏิเสธการสตาร์ทถ้าไม่ตั้งค่านี้
+แทนที่จะปล่อยให้เอเจนต์คุยกันผ่าน `ws://` แบบไม่เข้ารหัสแบบเงียบๆ
 
-## Dashboard-facing additions (for `frontend/`)
+## ส่วนเสริมสำหรับแดชบอร์ด (สำหรับ `frontend/`)
 
-Added to support the Next.js dashboard:
+เพิ่มเข้ามาเพื่อรองรับแดชบอร์ด Next.js:
 
-- **`GET /ws/dashboard`** (`src/ws/dashboardServer.ts`) — a second WebSocket
-  endpoint, separate from the agent hub, that pushes live `agent_update` and
-  `history_entry` messages to connected browser tabs (plus a full `snapshot`
-  on connect). Auth is a `?token=` query param (browsers can't set custom
-  headers on a native `WebSocket`), validated against a real per-user session
-  in Postgres (`src/auth/sessions.ts`) — a different token namespace from
-  the agent hub's, on purpose.
-- **`AgentRegistry`** now keeps agents after disconnect instead of deleting
-  them — they flip to `status: "offline"` and keep their last-known
-  telemetry, so the dashboard can show an unreachable device instead of it
-  vanishing. It extends `EventEmitter` and emits `"update"` on every state
-  change, which is what `dashboardServer.ts` subscribes to.
-- **`CommandHistoryStore`** (`src/history/commandHistory.ts`) — a bounded
-  in-memory log (500 entries) of every dispatched command and its eventual
-  `command_result`, correlated by command ID. `GET /api/command-history`
-  reads it; `dispatchToTargets` writes to it on every call.
-- **`POST /api/agents/:id/kill-process`** — direct process control for the
-  Task Manager UI's "Force Close" button. Skips the LLM parser (the UI
-  already knows exactly what it wants) but still goes through the same
-  signed-dispatch path as everything else, so it's audited and
-  history-logged identically to a chat-originated command.
+- **`GET /ws/dashboard`** (`src/ws/dashboardServer.ts`) — WebSocket endpoint
+  ตัวที่สอง แยกจาก agent hub ทำหน้าที่ push ข้อความ `agent_update` และ
+  `history_entry` แบบเรียลไทม์ไปยังแท็บเบราว์เซอร์ที่เชื่อมต่ออยู่ (บวก
+  `snapshot` เต็มตอนเชื่อมต่อครั้งแรก) การยืนยันตัวตนใช้ query param `?token=`
+  (เบราว์เซอร์ตั้ง custom header บน native `WebSocket` ไม่ได้) ตรวจสอบกับ
+  session จริงของผู้ใช้ใน Postgres (`src/auth/sessions.ts`) — คนละ namespace
+  ของ token กับฝั่ง agent hub โดยตั้งใจ
+- **`AgentRegistry`** ตอนนี้เก็บเอเจนต์ไว้หลังตัดการเชื่อมต่อแทนที่จะลบทิ้ง
+  — จะเปลี่ยนเป็น `status: "offline"` และเก็บ telemetry ล่าสุดไว้ ทำให้
+  แดชบอร์ดแสดงอุปกรณ์ที่ติดต่อไม่ได้แทนที่จะหายไปเฉยๆ มันสืบทอดจาก
+  `EventEmitter` และ emit `"update"` ทุกครั้งที่สถานะเปลี่ยน ซึ่งเป็นสิ่งที่
+  `dashboardServer.ts` subscribe อยู่
+- **`CommandHistoryStore`** (`src/history/commandHistory.ts`) — log ในหน่วย
+  ความจำแบบจำกัดจำนวน (500 รายการ) ของทุกคำสั่งที่ส่งออกไปพร้อม
+  `command_result` สุดท้าย เชื่อมกันด้วย command ID `GET /api/command-history`
+  อ่านจากตรงนี้ `dispatchToTargets` เขียนทุกครั้งที่เรียก
+- **`POST /api/agents/:id/kill-process`** — ควบคุม process โดยตรงสำหรับปุ่ม
+  "Force Close" ใน Task Manager UI ข้าม LLM parser (UI รู้อยู่แล้วว่าต้องการ
+  อะไร) แต่ยังผ่านเส้นทาง dispatch ที่เซ็นลายเซ็นเหมือนทุกอย่างอื่น จึงถูก
+  audit และบันทึกประวัติเหมือนคำสั่งที่มาจากแชท
 - **`POST /api/agents/:id/suggest-remediation`**
-  (`src/llm/remediationAdvisor.ts`) — a second, smaller Claude tool-use call
-  that looks at one process's live CPU/RAM from the last telemetry snapshot
-  and returns a `{suggested_action, reasoning, risk_note}` recommendation.
-  **It never applies anything itself** — the frontend shows the suggestion
-  and the operator clicks through to `kill-process` above if they agree.
-  This is the "One-Click Auto Remediation" button's backend: one click to
-  get the AI's opinion, one more to act on it — never a single click that
-  both asks and kills.
-- **Real per-user login** (`src/auth/`): `POST /api/auth/login` verifies a
-  username/password (bcrypt-hashed in the `users` table) and issues an opaque
-  session token stored in the `sessions` table — not a JWT, so revocation is
-  a plain `DELETE` rather than waiting out a signature's own expiry. Every
-  other `/api/*` route requires `Authorization: Bearer <session token>`,
-  validated against that table on each request (router-level middleware in
-  `src/api/routes.ts`). There's no public registration endpoint — accounts
-  are created by an administrator via `npm run user:create -- <username>
-  <password>`. `requestedBy` on every dispatched command is derived from the
-  authenticated session server-side, not taken from the request body, so a
-  client can't claim to be a different user than the one it logged in as.
-- **CORS** (`src/index.ts`, `cors` package): the dashboard runs on a
-  different origin (`localhost:3000`) than this server (`localhost:8080`),
-  and every REST call it makes carries a custom `Authorization` header —
-  that makes it a CORS-preflighted request regardless of method, which the
-  browser blocks client-side unless the server sends back
-  `Access-Control-Allow-Origin`. Set `OPTIFLEET_DASHBOARD_ORIGIN` to
-  whatever origin(s) actually serve the dashboard (comma-separated for
-  more than one) — it must match the browser's address bar exactly
-  (scheme + host + port, no trailing slash). **This only matters to an
-  actual browser** — `curl`, Node's `fetch`, Playwright-less scripts, and
-  PowerShell's `Invoke-RestMethod` don't enforce CORS at all, so a gap here
-  is invisible to any test that doesn't run in a real browser context.
+  (`src/llm/remediationAdvisor.ts`) — เรียก LLM อีกครั้งแบบเล็กกว่า ดู
+  CPU/RAM สดของ process หนึ่งตัวจาก telemetry snapshot ล่าสุด แล้วคืนคำแนะนำ
+  รูปแบบ `{suggested_action, reasoning, risk_note}` **ไม่เคยดำเนินการเองเลย**
+  — frontend แสดงคำแนะนำแล้วให้ผู้ใช้กดต่อไปที่ kill-process ด้านบนเองถ้า
+  เห็นด้วย นี่คือ backend ของปุ่ม "One-Click Auto Remediation": กดครั้งแรก
+  เพื่อขอความเห็นจาก AI กดอีกครั้งเพื่อลงมือทำ — ไม่มีทางเป็นคลิกเดียวที่ทั้ง
+  ถามและฆ่า process พร้อมกัน
+- **ระบบล็อกอินรายผู้ใช้จริง** (`src/auth/`): `POST /api/auth/login`
+  ตรวจสอบ username/password (hash ด้วย bcrypt ในตาราง `users`) แล้วออก
+  session token แบบ opaque เก็บในตาราง `sessions` — ไม่ใช่ JWT ดังนั้นการเพิก
+  ถอนคือ `DELETE` ธรรมดา ไม่ต้องรอวันหมดอายุของลายเซ็น ทุก route `/api/*`
+  อื่นต้องมี `Authorization: Bearer <session token>` ตรวจสอบกับตารางนั้นทุก
+  request (middleware ระดับ router ใน `src/api/routes.ts`) ไม่มี endpoint
+  สมัครสมาชิกสาธารณะ — บัญชีถูกสร้างโดยผู้ดูแลระบบผ่าน `npm run user:create
+  -- <username> <password>` `requestedBy` บนทุกคำสั่งที่ส่งออกไปมาจาก session
+  ที่ยืนยันตัวตนแล้วฝั่งเซิร์ฟเวอร์ ไม่ได้รับมาจาก request body ดังนั้น
+  client จะอ้างว่าเป็นผู้ใช้คนอื่นที่ไม่ใช่คนที่ล็อกอินไว้ไม่ได้
+- **CORS** (`src/index.ts`, แพ็กเกจ `cors`): แดชบอร์ดรันคนละ origin
+  (`localhost:3000`) กับเซิร์ฟเวอร์นี้ (`localhost:8080`) และทุก REST call
+  ที่มันเรียกจะพก header `Authorization` แบบ custom มาด้วย ทำให้เป็น
+  CORS-preflighted request เสมอไม่ว่าจะใช้ method ไหน ซึ่งเบราว์เซอร์จะบล็อก
+  ฝั่ง client ถ้าไม่ได้รับ `Access-Control-Allow-Origin` กลับมา ตั้งค่า
+  `OPTIFLEET_DASHBOARD_ORIGIN` ให้ตรงกับ origin จริงที่ให้บริการแดชบอร์ด
+  (คั่นด้วย comma ได้ถ้ามีหลาย origin) — ต้องตรงกับที่แสดงในแถบที่อยู่ของ
+  เบราว์เซอร์เป๊ะๆ (scheme + host + port ไม่มี trailing slash) **สิ่งนี้
+  มีผลเฉพาะกับเบราว์เซอร์จริงเท่านั้น** — `curl`, `fetch` ของ Node,
+  สคริปต์ที่ไม่ใช่ Playwright, และ `Invoke-RestMethod` ของ PowerShell ไม่
+  บังคับใช้ CORS เลย ดังนั้นช่องโหว่ตรงนี้จะมองไม่เห็นจาก test ที่ไม่ได้รัน
+  ในบริบทเบราว์เซอร์จริง
 
-## Persistence (Postgres)
+## การเก็บข้อมูลถาวร (Postgres)
 
-Required — user accounts and sessions (`src/auth/`) live in Postgres, not
-memory, so login has nowhere to persist without it; telemetry/command
-history durability rides along on the same connection. Set up:
+จำเป็นต้องมี — บัญชีผู้ใช้และ session (`src/auth/`) เก็บใน Postgres ไม่ใช่
+หน่วยความจำ ดังนั้นการล็อกอินจะไม่มีที่เก็บถ้าไม่มี Postgres ความคงทนของ
+telemetry/ประวัติคำสั่งก็อาศัย connection เดียวกันนี้ ตั้งค่า:
 
 ```powershell
-cp .env.example .env   # then set OPTIFLEET_DATABASE_URL
-npm run db:migrate      # applies src/db/schema.sql (idempotent, safe to re-run)
-npm run user:create -- <username> <password>   # create your first login
+cp .env.example .env   # แล้วตั้งค่า OPTIFLEET_DATABASE_URL
+npm run db:migrate      # รัน src/db/schema.sql (idempotent รันซ้ำได้ปลอดภัย)
+npm run user:create -- <username> <password>   # สร้างบัญชีล็อกอินแรก
 ```
 
-`src/db/persistence.ts` (`wirePersistence`, called once in `src/index.ts`)
-subscribes to the same `"update"`/`"telemetry"` events on `AgentRegistry` and
-`"entry"` events on `CommandHistoryStore` that `ws/dashboardServer.ts`
-already uses to push live updates to the browser — so nothing in
-`ws/server.ts`, `api/routes.ts`, or `ws/dispatch.ts` needed to change to add
-durable storage. Three tables: `agents` (current state, upserted),
-`telemetry_snapshots` (append-only time series, one row per snapshot — this
-is what makes historical charts possible instead of only "last known"),
-`command_history` (mirrors the in-memory ring buffer, but unbounded and
-durable). All writes are fire-and-forget with errors caught and logged —
-a Postgres outage degrades to "this snapshot didn't get persisted", it
-never blocks or breaks live agent handling or command dispatch.
+`src/db/persistence.ts` (`wirePersistence` เรียกครั้งเดียวใน `src/index.ts`)
+subscribe event `"update"`/`"telemetry"` ตัวเดียวกันบน `AgentRegistry` และ
+event `"entry"` บน `CommandHistoryStore` ที่ `ws/dashboardServer.ts` ใช้ push
+อัปเดตแบบเรียลไทม์ไปเบราว์เซอร์อยู่แล้ว — ดังนั้นไม่มีส่วนไหนใน
+`ws/server.ts`, `api/routes.ts`, หรือ `ws/dispatch.ts` ต้องแก้เพื่อเพิ่มการ
+เก็บข้อมูลถาวรเลย มีสามตาราง: `agents` (สถานะปัจจุบัน อัปเดตทับ),
+`telemetry_snapshots` (time series แบบ append-only บันทึกทีละแถวต่อ
+snapshot — นี่คือสิ่งที่ทำให้กราฟย้อนหลังเป็นไปได้ ไม่ใช่แค่ "รู้ค่าล่าสุด"),
+`command_history` (mirror ring buffer ในหน่วยความจำ แต่ไม่จำกัดจำนวนและคงทน)
+ทุกการเขียนเป็นแบบ fire-and-forget โดยดัก error แล้ว log ไว้ — Postgres
+ล่มจะลดระดับเหลือแค่ "snapshot นี้ไม่ถูกบันทึก" ไม่เคยบล็อกหรือทำให้การจัดการ
+เอเจนต์สดหรือการส่งคำสั่งพัง
 
-This single-process design is the right starting point before a multi-region
-deployment; see "Scaling beyond one instance" below for what changes once
-agents are online across regions and a lone Postgres write path becomes the
-next bottleneck (that's a queue in front of the DB writes, not a rethink of
-this schema).
+การออกแบบแบบ single-process นี้เป็นจุดเริ่มต้นที่ถูกต้องก่อนจะขยายไปหลาย
+region ดู "การขยายไปมากกว่าหนึ่ง instance" ด้านล่างว่าอะไรจะเปลี่ยนเมื่อ
+เอเจนต์ online ข้าม region และเส้นทางเขียน Postgres เดี่ยวกลายเป็นคอขวด
+ถัดไป (สิ่งนั้นคือคิวหน้าการเขียน DB ไม่ใช่การคิด schema นี้ใหม่)
 
-## Scaling beyond one instance
+## การขยายไปมากกว่าหนึ่ง instance
 
-`src/ws/registry.ts` is an in-memory `Map` — correct for a single server
-process, but a second process has no visibility into the first one's
-connected agents. Horizontal scaling needs a shared registry (Redis pub/sub
-is the usual choice: publish connect/disconnect/telemetry events, and route
-outbound commands through a channel the process holding that agent's socket
-subscribes to). The `AgentRegistry` class is deliberately the only thing
-`src/ws/server.ts` and `src/ws/dispatch.ts` talk to, so that swap is
-contained to one file.
+`src/ws/registry.ts` เป็น `Map` ในหน่วยความจำ — ถูกต้องสำหรับ process
+เซิร์ฟเวอร์เดียว แต่ process ที่สองจะมองไม่เห็นเอเจนต์ที่เชื่อมต่อกับ process
+แรกเลย การขยายแนวนอนต้องมี registry ที่แชร์กัน (Redis pub/sub เป็นตัวเลือก
+ปกติ: publish event connect/disconnect/telemetry แล้วส่งคำสั่งขาออกผ่าน
+channel ที่ process ซึ่งถือ socket ของเอเจนต์นั้น subscribe อยู่) คลาส
+`AgentRegistry` ถูกออกแบบให้เป็นสิ่งเดียวที่ `src/ws/server.ts` และ
+`src/ws/dispatch.ts` คุยด้วยโดยตั้งใจ การสลับแบบนี้จึงจำกัดอยู่ในไฟล์เดียว
 
-## Stability under many concurrent agents
+## ความเสถียรเมื่อมีเอเจนต์เชื่อมต่อพร้อมกันจำนวนมาก
 
-- `src/ws/server.ts` runs a ping/pong sweep every 30s and terminates any
-  connection that didn't respond since the last sweep — this is what
-  actually prunes half-dead sockets from network blips over hours/days,
-  rather than accumulating them.
-- A single malformed or hostile message from one agent is caught per-message
-  (`socket.on("message", ...)` wraps the handler in try/catch) so it can't
-  take the whole hub down for every other connected agent.
-- `src/index.ts` installs `uncaughtException` / `unhandledRejection`
-  handlers that log with full context and exit — run this under a process
-  supervisor (systemd, pm2, a container restart policy) so a truly
-  unexpected failure restarts into a clean state instead of limping along.
+- `src/ws/server.ts` รัน ping/pong sweep ทุก 30 วินาที และตัดการเชื่อมต่อใดๆ
+  ที่ไม่ตอบตั้งแต่ sweep ครั้งก่อน — นี่คือสิ่งที่เคลียร์ socket ที่ค้างครึ่งๆ
+  กลางๆ จากปัญหาเครือข่ายชั่วคราวจริงๆ แทนที่จะสะสมไปเรื่อยๆ
+- ข้อความผิดรูปแบบหรือมุ่งร้ายจากเอเจนต์ตัวเดียวถูกดักแยกทีละข้อความ
+  (`socket.on("message", ...)` ครอบ handler ด้วย try/catch) จึงไม่ทำให้ hub
+  ทั้งหมดล่มสำหรับเอเจนต์ตัวอื่นที่เชื่อมต่ออยู่
+- `src/index.ts` ติดตั้ง handler `uncaughtException` / `unhandledRejection`
+  ที่ log พร้อม context เต็มแล้ว exit — ให้รันภายใต้ process supervisor
+  (systemd, pm2, restart policy ของ container) เพื่อให้ความล้มเหลวที่ไม่
+  คาดคิดจริงๆ รีสตาร์ทกลับไปสู่สถานะสะอาด แทนที่จะค้างครึ่งๆ กลางๆ
 
-## What's intentionally not implemented yet
+## สิ่งที่ยังไม่ได้ทำโดยตั้งใจ
 
-- A real `run_script` submission flow (explicit script body + human review),
-  as discussed above.
-- Structured audit-log storage — `audit` currently logs to stdout via pino
-  (separately from the new Postgres `command_history` table above, which
-  only records dispatch outcomes, not the full audit trail); wire pino's
-  output into your log pipeline the same way as the agent's `audit.log`.
-- Dashboard authentication/authorization for `POST /api/command` itself —
-  `requestedBy` is currently a free-text field the caller supplies, not a
-  verified identity. Put this behind your existing auth layer (SSO, API
-  gateway) before exposing it beyond a trusted internal network.
+- flow การส่งสคริปต์ `run_script` จริง (ต้องมี body สคริปต์ชัดเจน + มนุษย์
+  review) ตามที่กล่าวข้างต้น
+- การเก็บ audit log แบบมีโครงสร้าง — `audit` ตอนนี้ log ออก stdout ผ่าน
+  pino (แยกจากตาราง `command_history` ใน Postgres ที่บันทึกแค่ผลลัพธ์การ
+  ส่งคำสั่ง ไม่ใช่ audit trail เต็ม) ให้เชื่อม output ของ pino เข้ากับ
+  log pipeline ของตัวเองแบบเดียวกับ `audit.log` ของเอเจนต์
+- การยืนยันตัวตน/สิทธิ์สำหรับแดชบอร์ดของ `POST /api/command` เอง —
+  `requestedBy` ตอนนี้เป็นฟิลด์ข้อความอิสระที่ผู้เรียกใส่มาเอง ไม่ใช่ตัวตนที่
+  ยืนยันแล้ว ให้ครอบด้วย auth layer ที่มีอยู่ (SSO, API gateway) ก่อนเปิดให้
+  ใช้นอกเครือข่ายภายในที่เชื่อถือได้
+</content>

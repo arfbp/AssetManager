@@ -1,6 +1,7 @@
-// Slack Incoming Webhooks — a stable, still-supported Slack feature (unlike
-// Teams' old Office 365 Connectors, see teams.ts). Create one at
-// https://api.slack.com/messaging/webhooks and set OPTIFLEET_NOTIFY_SLACK_WEBHOOK.
+// Slack Incoming Webhooks — ฟีเจอร์ของ Slack ที่เสถียรและยังรองรับอยู่
+// (ต่างจาก Office 365 Connectors เก่าของ Teams ดู teams.ts) สร้างได้ที่
+// https://api.slack.com/messaging/webhooks แล้วตั้งค่า
+// OPTIFLEET_NOTIFY_SLACK_WEBHOOK
 import type { NotificationEvent } from "../types.js";
 
 const SEVERITY_EMOJI: Record<NotificationEvent["severity"], string> = {

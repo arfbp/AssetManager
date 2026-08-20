@@ -1,6 +1,6 @@
--- Lets a newly created org's first admin set their own password via a
--- one-time link, instead of the platform admin choosing a password and
--- relaying it manually (plaintext-password-in-chat). Single-use, expiring.
+-- ให้ admin คนแรกของ org ที่เพิ่งสร้างตั้งรหัสผ่านของตัวเองผ่านลิงก์ใช้ครั้ง
+-- เดียว แทนที่ platform admin จะเป็นคนตั้งรหัสผ่านแล้วส่งต่อให้เอง
+-- (plaintext-password-in-chat) ใช้ได้ครั้งเดียวและมีวันหมดอายุ
 CREATE TABLE password_setup_tokens (
   token TEXT PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

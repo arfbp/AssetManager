@@ -1,11 +1,10 @@
-// Which computer(s) a peripheral asset has actually been connected through
-// over time — see schema.sql's asset_connection_history comment for why
-// this exists separately from assets.parent_agent_id (which only ever
-// holds the most recent one).
+// computer เครื่องไหนบ้างที่ peripheral asset ตัวนี้เคยเชื่อมต่อผ่านมาตาม
+// ช่วงเวลา — ดู comment ของ asset_connection_history ใน schema.sql ว่าทำไม
+// ถึงต้องแยกออกจาก assets.parent_agent_id (ซึ่งเก็บได้แค่ตัวล่าสุดตัวเดียว)
 //
-// asset_tag is only unique within an org (see migrations/0006 — per-org
-// sequential numbering means "OF-0001" exists in every org), so every
-// lookup here takes an orgId alongside it.
+// asset_tag unique แค่ภายใน org เดียวกันเท่านั้น (ดู migrations/0006 — การ
+// เรียงเลขแยกตาม org หมายความว่า "OF-0001" มีอยู่ในทุก org) ดังนั้นการค้นหา
+// ทุกจุดในไฟล์นี้จึงต้องรับ orgId มาด้วยเสมอ
 import type { Pool } from "pg";
 
 export interface ConnectionHistoryEntry {
@@ -29,8 +28,8 @@ export async function listConnectionHistory(pool: Pool, orgId: string, assetTag:
   return rows.map((r) => ({ agentId: r.agent_id, connectedAt: r.connected_at, disconnectedAt: r.disconnected_at }));
 }
 
-// Finds the currently-open (disconnected_at IS NULL) episode for this asset,
-// if any — regardless of which agent it's open against.
+// ค้นหาช่วงที่ยังเปิดอยู่ (disconnected_at IS NULL) ของ asset นี้ ถ้ามี —
+// ไม่สนว่ากำลังเปิดอยู่กับ agent ตัวไหน
 export async function findOpenConnection(pool: Pool, orgId: string, assetTag: string): Promise<{ agentId: string } | null> {
   const { rows } = await pool.query<{ agent_id: string }>(
     `SELECT agent_id FROM asset_connection_history WHERE org_id = $1 AND asset_tag = $2 AND disconnected_at IS NULL LIMIT 1`,

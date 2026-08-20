@@ -1,29 +1,27 @@
-# Installs the OptiFleet AI Agent as a Windows Service on THIS machine,
-# pointed at the central server's public VPS IP (27.254.142.51) - works from
-# any internet connection, anywhere in the world, not just the office LAN.
-# Run from an elevated (Administrator) PowerShell prompt.
+# ติดตั้ง OptiFleet AI Agent เป็น Windows Service บนเครื่องนี้ ชี้ไปที่
+# IP สาธารณะของ VPS ของ central server (27.254.142.51) - ใช้งานได้จาก
+# การเชื่อมต่ออินเทอร์เน็ตใดก็ได้ ไม่ใช่แค่ใน LAN ของออฟฟิศ
+# รันจาก PowerShell prompt แบบ elevated (Administrator)
 #
-# Uses NSSM (bundled nssm.exe) to register the service, rather than the
-# agent binary installing itself. A binary that self-elevates and installs
-# its own Windows Service is exactly the behavior pattern antivirus
-# heuristics flag as a dropper/trojan - on real target machines that got the
-# exe silently deleted moments after it ran, with zero visible error. NSSM
-# is a long-established, widely-used service-wrapper tool; having IT do the
-# service registration instead of the agent binary itself is a meaningfully
-# different, much less suspicious pattern - the same one already running
-# this project's own dev-machine agent without issue. The agent exe is also
-# self-signed (see README.txt) so it isn't flagged as entirely unsigned,
-# though that's not the same as a trusted CA certificate.
+# ใช้ NSSM (nssm.exe ที่แนบมาด้วย) ลงทะเบียน service แทนที่จะให้ agent
+# binary ติดตั้งตัวเอง เพราะ binary ที่ self-elevate แล้วติดตั้ง Windows
+# Service ของตัวเองคือพฤติกรรมที่ heuristic ของ antivirus มักตั้งธงว่าเป็น
+# dropper/trojan พอดี - บนเครื่องเป้าหมายจริงเคยเจอ exe ถูกลบเงียบๆ ไม่กี่
+# วินาทีหลังรัน โดยไม่มี error ให้เห็นเลย NSSM เป็นเครื่องมือ service
+# wrapper ที่ใช้กันมานานและแพร่หลาย การให้ IT ลงทะเบียน service แทนที่จะให้
+# agent binary ทำเองเป็นแพตเทิร์นที่ต่างออกไปอย่างมีนัยสำคัญและน่าสงสัยน้อย
+# กว่ามาก - แบบเดียวกับที่รัน agent บนเครื่อง dev ของโปรเจกต์นี้เองอยู่แล้ว
+# โดยไม่มีปัญหา agent exe เองก็ self-signed ด้วย (ดู README.txt) จึงไม่ถูก
+# ตั้งธงว่าไม่มีลายเซ็นเลย แม้จะไม่เทียบเท่า certificate จาก CA ที่เชื่อถือได้
 #
-# The service is installed under its normal name and is visible in
-# services.msc / Task Manager - nothing here hides it.
+# service ถูกติดตั้งภายใต้ชื่อปกติและมองเห็นได้ใน services.msc / Task
+# Manager - ไม่มีอะไรในนี้ที่ซ่อนมัน
 #
-# Wrapped in try/catch/finally with a pause at the very end - this file is
-# sometimes run directly (e.g. right-click > Run with PowerShell) rather
-# than via RUN-ME.bat, and PowerShell closes the window immediately when a
-# script like this one exits, error or not. Without the pause, any error
-# message - the thing you'd actually need to read - flashes red for a
-# fraction of a second and the window is just gone.
+# ครอบด้วย try/catch/finally พร้อม pause ตอนจบ - ไฟล์นี้บางครั้งถูกรัน
+# ตรงๆ (เช่น right-click > Run with PowerShell) แทนที่จะผ่าน RUN-ME.bat
+# และ PowerShell จะปิดหน้าต่างทันทีเมื่อสคริปต์แบบนี้จบ ไม่ว่าจะ error
+# หรือไม่ ถ้าไม่มี pause ข้อความ error - สิ่งที่ต้องอ่านจริงๆ - จะกระพริบ
+# แดงแค่เสี้ยววินาทีแล้วหน้าต่างก็หายไปเลย
 
 $ErrorActionPreference = "Stop"
 
@@ -36,11 +34,11 @@ try {
     $installDir = "C:\ProgramData\OptiFleetAgent"
     $scriptDir = $PSScriptRoot
 
-    # Unsigned-binary AV heuristics again - excluding the install path before
-    # anything is copied/run stops Defender quarantining it mid-install. Only
-    # affects Windows Defender specifically; a centrally-managed corporate AV
-    # product needs its own allowlist entry from your IT/security team - no
-    # script can add that from here.
+    # เรื่อง heuristic ของ AV กับ binary ที่ไม่มีลายเซ็นอีกครั้ง - การ exclude
+    # install path ก่อนจะ copy/รันอะไรเลยช่วยกัน Defender กักกันมันระหว่าง
+    # ติดตั้ง มีผลกับ Windows Defender เท่านั้น; AV ขององค์กรที่จัดการจาก
+    # ส่วนกลางต้องให้ทีม IT/security เพิ่ม allowlist เอง สคริปต์นี้ทำแทน
+    # ไม่ได้
     try {
         Add-MpPreference -ExclusionPath $installDir -ErrorAction Stop
         Write-Host "Added Windows Defender exclusion for $installDir"
@@ -48,13 +46,12 @@ try {
         Write-Warning "Could not add a Defender exclusion (Defender may be managed centrally by IT policy, or not present) - continuing anyway."
     }
 
-    # Stop and remove any previous install FIRST, before touching any files -
-    # a running service holds its own exe file open, so copying a new one
-    # over it fails with "cannot access the file, being used by another
-    # process" if this happens in the wrong order (verified on a real
-    # re-install). sc.exe delete rather than nssm.exe here deliberately -
-    # this has to work even when it's the very file about to be overwritten
-    # that would otherwise need to remove the service that's locking it.
+    # หยุดและลบการติดตั้งเดิมก่อนเสมอ ก่อนจะแตะไฟล์ใดๆ - service ที่กำลัง
+    # รันจะถือไฟล์ exe ของตัวเองค้างไว้ ดังนั้นการ copy ตัวใหม่ทับจะพังด้วย
+    # "cannot access the file, being used by another process" ถ้าทำผิด
+    # ลำดับ (ยืนยันจากการติดตั้งซ้ำจริง) ใช้ sc.exe delete แทน nssm.exe
+    # ตรงนี้โดยตั้งใจ - ต้องทำงานได้แม้ในกรณีที่ไฟล์ตัวเดียวกันที่กำลังจะ
+    # ถูกเขียนทับนี่แหละที่ต้องใช้ลบ service ที่ล็อกมันอยู่
     $existing = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if ($existing) {
         Write-Host "Existing install found - stopping and removing it first..."
@@ -81,12 +78,12 @@ try {
 
     Write-Host "Installing service via NSSM (visible in services.msc as '$serviceName')..."
     & $nssmPath install $serviceName $exePath
-    # No quotes needed around $configPath: install dir is deliberately under
-    # C:\ProgramData (no spaces), not C:\Program Files - NSSM's own
-    # "set AppParameters" was verified to strip embedded quote characters
-    # when reconstructing this value, which would have silently truncated a
-    # spaced path at the first space (e.g. "-config C:\Program" and a
-    # dangling, ignored "Files\..." token) with no visible error anywhere.
+    # ไม่ต้องใส่ quote รอบ $configPath: install dir ตั้งใจอยู่ใต้
+    # C:\ProgramData (ไม่มีช่องว่าง) ไม่ใช่ C:\Program Files - ยืนยันแล้วว่า
+    # "set AppParameters" ของ NSSM เองจะตัดอักขระ quote ที่ฝังไว้ทิ้งตอน
+    # ประกอบค่านี้กลับมา ซึ่งจะทำให้ path ที่มีช่องว่างถูกตัดขาดที่ช่องว่าง
+    # แรกแบบเงียบๆ (เช่น "-config C:\Program" แล้ว "Files\..." ที่เหลือ
+    # ค้างและถูกมองข้ามไป) โดยไม่มี error ให้เห็นเลย
     & $nssmPath set $serviceName AppParameters "-run -config $configPath"
     & $nssmPath set $serviceName AppDirectory $installDir
     & $nssmPath set $serviceName DisplayName "OptiFleet AI Agent"
@@ -95,13 +92,13 @@ try {
     & $nssmPath set $serviceName AppStdout (Join-Path $logDir "service-stdout.log")
     & $nssmPath set $serviceName AppStderr (Join-Path $logDir "service-stderr.log")
 
-    # This organization's own generated credentials - must match this same
-    # org's row in the central server's `organizations` table
-    # (agent_auth_token / agent_hmac_secret). Not shared with any other
-    # organization on this deployment - treat this file as sensitive.
-    # NSSM's own AppEnvironmentExtra is what the running service process
-    # actually sees - not the same reliability trap as the earlier
-    # self-install path had with kardianos/service's env handling.
+    # credential ที่สร้างเฉพาะองค์กรนี้ - ต้องตรงกับแถวขององค์กรนี้ในตาราง
+    # `organizations` ของ central server (agent_auth_token /
+    # agent_hmac_secret) ไม่ได้แชร์กับองค์กรอื่นบน deployment นี้ - ให้ถือว่า
+    # ไฟล์นี้เป็นข้อมูลอ่อนไหว AppEnvironmentExtra ของ NSSM เองคือสิ่งที่
+    # service process ที่กำลังรันเห็นจริงๆ ไม่มีปัญหาความน่าเชื่อถือแบบที่
+    # การจัดการ env ของ kardianos/service ในเส้นทาง self-install แบบเดิม
+    # เคยมี
     Write-Host "Setting secrets..."
     $envBlock = "__ENV_BLOCK__"
     & $nssmPath set $serviceName AppEnvironmentExtra $envBlock

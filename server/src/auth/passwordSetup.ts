@@ -1,14 +1,14 @@
-// Self-service "set your own password" tokens — replaces the old flow where
-// a platform admin hand-picked a new org's admin password and relayed it
-// manually over chat/email (a plaintext-password-in-transit pattern). Same
-// opaque-random-token-in-Postgres shape as sessions.ts's own tokens, for the
-// same reason: revocation/expiry is a plain DB check, not a signature to
-// trust.
+// token แบบ self-service สำหรับ "ตั้งรหัสผ่านของตัวเอง" — มาแทน flow เดิมที่
+// platform admin ต้องตั้งรหัสผ่าน admin ของ org ใหม่เอง แล้วส่งต่อผ่าน
+// chat/email ด้วยมือ (รูปแบบที่รหัสผ่านเดินทางเป็น plaintext) ใช้รูปแบบ
+// token สุ่มแบบ opaque เก็บใน Postgres เดียวกับ token ของ sessions.ts ด้วย
+// เหตุผลเดียวกัน: การเพิกถอน/หมดอายุเป็นแค่การเช็ค DB ธรรมดา ไม่ใช่การ
+// ตรวจสอบลายเซ็นที่ต้องเชื่อถือ
 import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { hashPassword } from "./passwords.js";
 
-const SETUP_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — matches session TTL
+const SETUP_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 วัน — เท่ากับ TTL ของ session
 
 export async function createSetupToken(pool: Pool, userId: string): Promise<string> {
   const token = randomBytes(32).toString("hex");
@@ -21,12 +21,12 @@ export async function createSetupToken(pool: Pool, userId: string): Promise<stri
   return token;
 }
 
-// Validates the token (exists, unexpired, unused) and sets the password in
-// one go — there's no separate "peek at the token" step before submission,
-// same "don't leak which part of a lookup failed" posture as login, just
-// applied to an invite link instead of a password. Returns false (not an
-// error) for any invalid/expired/used token, so callers can respond with
-// one generic message regardless of which check failed.
+// ตรวจสอบ token (มีอยู่จริง ยังไม่หมดอายุ ยังไม่เคยใช้) และตั้งรหัสผ่านในขั้น
+// ตอนเดียวกันเลย — ไม่มีขั้นตอน "แอบดู token" แยกก่อนส่งจริง แนวทาง "ไม่เปิด
+// เผยว่าการตรวจสอบส่วนไหนล้มเหลว" เดียวกับตอน login แค่เปลี่ยนมาใช้กับลิงก์
+// คำเชิญแทนรหัสผ่าน คืนค่า false (ไม่ throw error) สำหรับ token ที่ไม่ถูกต้อง/
+// หมดอายุ/ถูกใช้แล้วทุกกรณี เพื่อให้ผู้เรียกตอบข้อความทั่วไปข้อความเดียวได้ไม่
+// ว่าจะล้มเหลวด้วยเหตุผลไหน
 export async function consumeSetupToken(pool: Pool, token: string, newPassword: string): Promise<boolean> {
   const { rows } = await pool.query<{ user_id: string }>(
     `SELECT user_id FROM password_setup_tokens WHERE token = $1 AND used_at IS NULL AND expires_at > now()`,

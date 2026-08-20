@@ -1,5 +1,5 @@
-// Password hashing, isolated in its own module so nothing else in the
-// codebase needs to know or care which algorithm is used.
+// การ hash รหัสผ่าน แยกไว้เป็นโมดูลของตัวเองเพื่อไม่ให้ส่วนอื่นในโค้ดต้องรู้
+// หรือสนใจว่าใช้ algorithm อะไร
 import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 12;

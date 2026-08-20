@@ -1,5 +1,5 @@
-// Package config loads and validates the agent's YAML configuration file,
-// with environment variables layered on top for secrets.
+// Package config โหลดและตรวจสอบไฟล์ config YAML ของ agent โดยมี
+// environment variables ซ้อนทับด้านบนสำหรับค่า secret
 package config
 
 import (
@@ -32,9 +32,9 @@ type ServerConfig struct {
 	ClientKeyPath   string `yaml:"client_key_path"`
 	CACertPath      string `yaml:"ca_cert_path"`
 	HMACSecretEnv   string `yaml:"hmac_secret_env"`
-	AuthTokenEnvVar string `yaml:"-"` // fixed name, not user-configurable
+	AuthTokenEnvVar string `yaml:"-"` // ชื่อตายตัว ผู้ใช้ config เองไม่ได้
 
-	// Resolved at load time, never serialized back out or logged.
+	// resolve ตอนโหลด ไม่ serialize กลับออกไปหรือ log ที่ไหนเลย
 	AuthToken  string `yaml:"-"`
 	HMACSecret string `yaml:"-"`
 }
@@ -61,18 +61,18 @@ type CommandsConfig struct {
 	RestartConfirmDelay  time.Duration `yaml:"restart_confirm_delay"`
 	CleanTempAllowedDirs []string      `yaml:"clean_temp_allowed_dirs"`
 
-	// Bounds for the "run_script" action, if enabled. These apply even when
-	// enabled — see internal/executor.Config for why they can't be relaxed
-	// by an individual command.
+	// ขอบเขตของ action "run_script" ถ้าเปิดใช้งาน ค่าพวกนี้บังคับใช้เสมอแม้
+	// จะเปิดใช้งานแล้วก็ตาม — ดู internal/executor.Config ว่าทำไมคำสั่งแต่ละ
+	// อันถึงมาผ่อนปรนเองไม่ได้
 	ScriptTimeout        time.Duration `yaml:"script_timeout"`
 	MaxScriptBytes       int           `yaml:"max_script_bytes"`
 	MaxScriptOutputBytes int           `yaml:"max_script_output_bytes"`
 }
 
-// SelfHealConfig drives the autonomous self-healing engine
-// (internal/selfheal). Unlike Commands, none of this is remotely
-// expandable at runtime — the service list, cleanup directories, and
-// leak thresholds are fixed by whoever deploys this config file.
+// SelfHealConfig ควบคุม self-healing engine แบบอัตโนมัติ
+// (internal/selfheal) ต่างจาก Commands ตรงที่ส่วนนี้ไม่มีอะไรขยายได้จาก
+// ระยะไกลตอน runtime เลย — รายชื่อ service, ไดเรกทอรีสำหรับ cleanup, และ
+// threshold ของ leak ถูกกำหนดตายตัวโดยคนที่ deploy config file นี้
 type SelfHealConfig struct {
 	Services    SelfHealServicesConfig    `yaml:"services"`
 	DiskCleanup SelfHealDiskCleanupConfig `yaml:"disk_cleanup"`
@@ -98,9 +98,9 @@ type SelfHealMemoryLeakConfig struct {
 const authTokenEnvVar = "OPTIFLEET_AUTH_TOKEN"
 const runScriptEnableEnvVar = "OPTIFLEET_ENABLE_RUN_SCRIPT"
 
-// Load reads the YAML file at path, then layers in secrets from environment
-// variables. It returns an error rather than partially-valid config so
-// callers never run with silently-missing security settings.
+// Load อ่านไฟล์ YAML ที่ path แล้วซ้อนทับ secrets จาก environment variables
+// เข้าไป คืน error แทนที่จะให้ config ที่ valid บางส่วนผ่านไป เพื่อไม่ให้
+// caller รันด้วย security setting ที่ขาดหายไปแบบเงียบ ๆ
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -144,9 +144,9 @@ func (c *Config) validate() error {
 	if c.Polling.RecoveryStreak <= 0 {
 		c.Polling.RecoveryStreak = 3
 	}
-	// top_n_processes <= 0 (including unset/0, Go's zero value) means "send
-	// every running process, no cap" — left as-is rather than defaulted to
-	// a fixed number. See internal/telemetry/collector.go.
+	// top_n_processes <= 0 (รวมถึงกรณีไม่ได้ set ซึ่งเป็น zero value ของ Go)
+	// แปลว่า "ส่งทุก process ที่รันอยู่ ไม่มี cap" — ปล่อยไว้แบบนี้แทนที่จะตั้ง
+	// default เป็นตัวเลขตายตัว ดู internal/telemetry/collector.go
 	if len(c.Commands.Allowed) == 0 {
 		return fmt.Errorf("commands.allowed must not be empty — refusing to run with an unbounded command surface")
 	}
@@ -167,7 +167,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// AllowedSet returns the command allowlist as a lookup set.
+// AllowedSet คืน command allowlist ในรูปแบบ lookup set
 func (c *Config) AllowedSet() map[string]struct{} {
 	set := make(map[string]struct{}, len(c.Commands.Allowed))
 	for _, name := range c.Commands.Allowed {

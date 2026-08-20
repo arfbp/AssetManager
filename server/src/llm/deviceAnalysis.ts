@@ -1,14 +1,12 @@
-// Powers the dashboard's "Should we replace this PC?" button. Advisory
-// only, same trust posture as remediationAdvisor.ts — this never files a
-// purchase request or takes any action itself, it just gives an IT operator
-// a reasoned opinion to hand to whoever approves hardware spend.
+// เป็นตัวขับปุ่ม "ควรเปลี่ยนเครื่องนี้ไหม?" บน dashboard ทำหน้าที่ให้คำแนะนำ
+// เท่านั้น จุดยืนความน่าเชื่อถือเดียวกับ remediationAdvisor.ts — โมดูลนี้ไม่มี
+// ทางยื่นคำขอซื้อหรือลงมือทำอะไรเอง แค่ให้เหตุผลประกอบแก่ผู้ควบคุม IT
+// เพื่อนำไปเสนอผู้อนุมัติงบฮาร์ดแวร์
 //
-// There's no purchase-date/warranty field anywhere in this system, so the
-// model reasons from what telemetry actually shows: sustained resource
-// pressure (a machine chronically pegged at high CPU/RAM/disk usage is a
-// real productivity drag on whoever uses it) and reliability (how often
-// something on it stops responding) — not an age estimate it would have to
-// fabricate.
+// ระบบนี้ไม่มี field วันที่ซื้อ/ประกันเลย ดังนั้นโมเดลจึงต้องให้เหตุผลจากสิ่งที่
+// telemetry แสดงจริง ๆ คือ แรงกดดันด้านทรัพยากรที่ต่อเนื่อง (เครื่องที่ CPU/RAM/
+// disk สูงติดต่อกันเป็นภาระต่อ productivity ของผู้ใช้จริง) และความน่าเชื่อถือ
+// (ความถี่ที่โปรแกรมค้าง) — ไม่ใช่การประมาณอายุเครื่องซึ่งโมเดลจะต้องเดาเอาเอง
 import OpenAI from "openai";
 import { z } from "zod";
 import { log } from "../logger.js";

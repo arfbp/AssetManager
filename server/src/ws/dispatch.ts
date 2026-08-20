@@ -1,7 +1,6 @@
-// Signs and sends a resolved command to every target agent, and reports back
-// which ones were actually online to receive it. This is the only place
-// that constructs a signed CommandPayload — routes.ts never builds one
-// directly.
+// เซ็นและส่งคำสั่งที่ resolve แล้วไปยัง target agent ทุกตัว แล้วรายงานกลับว่า
+// ตัวไหนออนไลน์อยู่จริงจนได้รับคำสั่ง นี่คือจุดเดียวที่สร้าง signed
+// CommandPayload — routes.ts ไม่เคยสร้างเองโดยตรง
 import { randomUUID } from "node:crypto";
 import { audit } from "../logger.js";
 import { signCommand } from "../crypto/commandSigner.js";

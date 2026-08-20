@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { CreateOrgModal, type CreateOrgPrefill } from "@/components/orgs/CreateOrgModal";
 import { AddUserModal, type AddUserPrefill } from "@/components/users/AddUserModal";
+import { VendorFormModal, type VendorPrefill } from "@/components/vendors/VendorFormModal";
+import { PurchaseOrderFormModal, type PurchaseOrderPrefill } from "@/components/procurement/PurchaseOrderFormModal";
 import { ApiError, confirmCommand, submitCommand, downloadOrgInstaller, downloadAgentInstaller } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
 import type { AgentSummary, HistoryEntry, HistoryEntryStatus } from "@/lib/types";
@@ -14,26 +16,25 @@ interface ChatMessage {
   role: "user" | "system";
   text: string;
   tone?: "info" | "success" | "error" | "pending";
-  // What the model understood the request to mean, shown as a small
-  // secondary line so the operator can see the interpreted intent, not
-  // just the outcome.
+  // สิ่งที่โมเดลเข้าใจว่าคำขอหมายถึงอะไร แสดงเป็นบรรทัดรองเล็กๆ ให้ผู้ใช้
+  // เห็นเจตนาที่ระบบตีความ ไม่ใช่แค่ผลลัพธ์
   reasoning?: string;
-  // Set only for a dispatched network_diagnostic (ping/tracert/nslookup/
-  // netstat) — one entry per device it went to. Rendered live from the
-  // commandOutputs prop, which updates as chunks arrive over the dashboard
-  // WebSocket, so the operator sees hops/replies appear one at a time
-  // instead of waiting for the whole command to finish.
+  // ตั้งค่าเฉพาะตอนยิง network_diagnostic (ping/tracert/nslookup/netstat)
+  // สำเร็จ — หนึ่งรายการต่อหนึ่งอุปกรณ์ปลายทาง render แบบ real-time จาก
+  // prop commandOutputs ที่อัปเดตเมื่อมีข้อมูลส่งมาทาง WebSocket ของ
+  // dashboard ทำให้ผู้ใช้เห็น hop/การตอบกลับทยอยขึ้นทีละอันแทนที่จะรอ
+  // คำสั่งทำงานเสร็จทั้งหมดก่อน
   streamTargets?: { commandId: string; agentId: string }[];
-  // Set only for a generate_installer admin_result — renders a "Download
-  // installer" button reusing the exact same routes the Downloads/
-  // Organizations pages already call, see api.ts's downloadAgentInstaller/
-  // downloadOrgInstaller.
+  // ตั้งค่าเฉพาะตอนได้ admin_result แบบ generate_installer — ใช้ render
+  // ปุ่ม "Download installer" โดยเรียก route เดียวกับที่หน้า Downloads/
+  // Organizations ใช้อยู่แล้ว ดู downloadAgentInstaller/downloadOrgInstaller
+  // ใน api.ts
   installer?: { orgId: string; subdomain: string; ownOrg: boolean };
-  // Who sent it and when — set only on entries reconstructed from durable
-  // server-side history (see buildHistoryMessages), so past sessions still
-  // show the same audit trail as command_history/"Recent activity". Not set
-  // on messages from the current live session — there, "who" is implicitly
-  // the operator currently typing.
+  // ใครส่งและส่งเมื่อไหร่ — ตั้งค่าเฉพาะรายการที่ประกอบขึ้นจาก history
+  // ฝั่งเซิร์ฟเวอร์ (ดู buildHistoryMessages) เพื่อให้ session เก่ายังเห็น
+  // audit trail เหมือนที่ command_history/"Recent activity" แสดง ไม่ตั้ง
+  // ค่านี้กับข้อความจาก session ปัจจุบันที่กำลังคุยอยู่สด — เพราะ "ใคร"
+  // ก็คือผู้ใช้ที่กำลังพิมพ์อยู่นั่นเอง
   meta?: string;
 }
 
@@ -51,15 +52,14 @@ const HISTORY_STATUS_FALLBACK: Record<HistoryEntryStatus, string> = {
   offline: "Device was offline when this was sent.",
 };
 
-// Reconstructs past console turns from the durable command_history table
-// (the same data "Recent activity" and the drawer's "Commands" tab read
-// from) so re-opening this console shows what was already sent to this
-// device rather than starting blank every time — every entry already
-// carries who sent it (server-derived requestedBy, never client-supplied).
-// Scoped to a single device (not the live scope dropdown, which can be
-// changed to target something else without rewriting past history) and
-// capped to the most recent entries so an old, busy device doesn't dump an
-// unbounded wall of text into the panel.
+// ประกอบบทสนทนาก่อนหน้าขึ้นใหม่จากตาราง command_history ที่เก็บถาวรไว้
+// (ข้อมูลชุดเดียวกับที่ "Recent activity" และแท็บ "Commands" ใน drawer
+// อ่าน) เพื่อให้เปิด console นี้ใหม่แล้วเห็นสิ่งที่เคยส่งไปยังอุปกรณ์นี้
+// แล้ว แทนที่จะเริ่มว่างเปล่าทุกครั้ง — ทุกรายการมี requestedBy ที่มาจาก
+// ฝั่งเซิร์ฟเวอร์เสมอ ไม่ใช่ค่าที่ client ส่งมาเอง จำกัดขอบเขตไว้แค่
+// อุปกรณ์เดียว (ไม่ใช่ dropdown scope ปัจจุบันที่เปลี่ยนเป้าหมายได้โดยไม่
+// กระทบ history เก่า) และจำกัดจำนวนรายการล่าสุดไว้ไม่ให้อุปกรณ์เก่าที่ใช้
+// งานถี่ทำให้ panel เต็มไปด้วยข้อความจนอ่านไม่ไหว
 const MAX_HISTORY_MESSAGES = 20;
 
 function buildHistoryMessages(history: HistoryEntry[], deviceScope: string | undefined): ChatMessage[] {
@@ -95,17 +95,28 @@ interface PendingConfirmation {
   resolved: { action: string; params: Record<string, string> };
 }
 
-// Admin confirmations (suspend/reactivate/delete an org or user) are a
-// separate concern from device confirmations above — different shape
-// (named org/user, not device targets), same POST /command/:id/confirm
-// endpoint either way (see server/src/api/routes.ts's dual pendingAdmin
-// store). delete_organization gets its own stricter type-the-name control
-// below instead of a plain yes/no, mirroring the Organizations page's own
-// DeleteOrgModal — this is the one truly irreversible admin action.
+// การยืนยันฝั่ง admin (ระงับ/เปิดใช้/ลบ org หรือ user) เป็นคนละเรื่องกับ
+// การยืนยันฝั่งอุปกรณ์ด้านบน — รูปแบบข้อมูลต่างกัน (ระบุ org/user เป็นชื่อ
+// ไม่ใช่รายการอุปกรณ์) แต่ใช้ endpoint POST /command/:id/confirm เดียวกัน
+// (ดู pendingAdmin store คู่ใน server/src/api/routes.ts) ส่วน
+// delete_organization มีช่องพิมพ์ยืนยันชื่อที่เข้มงวดกว่าด้านล่าง แทน
+// ปุ่มใช่/ไม่ใช่ธรรมดา ตามแบบ DeleteOrgModal ของหน้า Organizations เพราะ
+// เป็น action เดียวที่ย้อนกลับไม่ได้จริงๆ
 interface PendingAdminConfirmation {
   pendingId: string;
   reason: string;
   resolved: { action: string; orgName?: string; username?: string };
+}
+
+// การยืนยันฝั่ง Asset Management ERP (อนุมัติ/ปฏิเสธ PO, ปิดงาน
+// maintenance, ส่งมอบ asset) — รูปแบบเหมือน PendingAdminConfirmation คือ
+// ระบุเป้าหมายเป็นชื่อ ไม่ใช่รายการอุปกรณ์ ใช้ endpoint POST
+// /command/:id/confirm เดียวกัน เพียงแต่แยก pending-ID เป็นชุดที่สาม
+// ต่างหากฝั่งเซิร์ฟเวอร์ (ดู pendingErp ใน server/src/api/routes.ts)
+interface PendingErpConfirmation {
+  pendingId: string;
+  reason: string;
+  resolved: { action: string; poNumber?: string; assetTag?: string };
 }
 
 const TONE_CLASS: Record<NonNullable<ChatMessage["tone"]>, string> = {
@@ -121,35 +132,35 @@ function newId(): string {
 
 interface ChatConsoleProps {
   agents: AgentSummary[];
-  // Preselects the device dropdown (e.g. when embedded in a specific
-  // device's drawer) — the dropdown still lets the operator switch to
-  // another device or back to "All devices" for a group command. Also used
-  // to seed past turns for this device from durable history (see
-  // buildHistoryMessages) — switching the dropdown later doesn't reseed.
+  // เลือกอุปกรณ์ล่วงหน้าใน dropdown (เช่นตอนฝังอยู่ใน drawer ของอุปกรณ์ใด
+  // อุปกรณ์หนึ่ง) — dropdown ยังสลับไปอุปกรณ์อื่นหรือกลับไป "All devices"
+  // สำหรับคำสั่งแบบกลุ่มได้ตามปกติ ค่านี้ยังใช้ดึง history เก่าของ
+  // อุปกรณ์นี้มาแสดง (ดู buildHistoryMessages) ด้วย — ถ้าสลับ dropdown
+  // ทีหลังจะไม่ดึง history ใหม่มาแทน
   defaultScope?: string;
-  // Fleet-wide dispatched-command history (from useDashboardSocket) — used
-  // only to seed this device's past console turns on mount, same source
-  // "Recent activity" and the drawer's "Commands" tab already read from.
+  // history คำสั่งที่ยิงออกไปทั้งฟลีต (จาก useDashboardSocket) — ใช้แค่
+  // ตอน mount เพื่อดึงบทสนทนาเก่าของอุปกรณ์นี้มาแสดง ข้อมูลชุดเดียวกับที่
+  // "Recent activity" และแท็บ "Commands" ใน drawer ใช้อยู่แล้ว
   history?: HistoryEntry[];
-  // Live streamed output for in-flight network_diagnostic commands, keyed
-  // by commandId — from useDashboardSocket(). Undefined/missing entries
-  // just render as "waiting for output…" until the first chunk arrives.
+  // ผลลัพธ์แบบ real-time ของคำสั่ง network_diagnostic ที่กำลังทำงานอยู่
+  // แยกตาม commandId — มาจาก useDashboardSocket() รายการที่ยังไม่มีข้อมูล
+  // จะ render เป็น "waiting for output…" จนกว่าข้อมูลชิ้นแรกจะมาถึง
   commandOutputs?: Record<string, StreamedCommandOutput>;
 }
 
 /**
- * Natural-language command console. Every submission goes through the
- * server's LLM parser + security guardrail (POST /api/command) — this
- * component only renders whatever the server decided (dispatched / needs
- * confirmation / blocked). It never constructs or sends a command directly.
+ * คอนโซลรับคำสั่งภาษาธรรมชาติ ทุกคำสั่งที่ส่งจะผ่าน LLM parser + security
+ * guardrail ฝั่งเซิร์ฟเวอร์ (POST /api/command) — component นี้ทำแค่
+ * render ผลลัพธ์ที่เซิร์ฟเวอร์ตัดสินใจแล้ว (dispatched / needs
+ * confirmation / blocked) ไม่เคยสร้างหรือส่งคำสั่งเองโดยตรง
  *
- * The device selector is optional — leaving it on "All devices" falls back
- * to the model extracting scope from the sentence itself (group commands
- * like "clean temp on the accounting group" need this, since there's no
- * single device to preselect). Picking one specific device instead sends it
- * straight through as an override (see routes.ts's CommandRequestSchema),
- * which is both a UX shortcut and a reliability fix — the model has
- * misread which device a sentence meant more than once in this project.
+ * ตัวเลือกอุปกรณ์ไม่บังคับ — ถ้าปล่อยไว้ที่ "All devices" ระบบจะให้โมเดล
+ * ดึง scope จากประโยคเอง (คำสั่งแบบกลุ่มอย่าง "clean temp on the
+ * accounting group" ต้องพึ่งวิธีนี้ เพราะไม่มีอุปกรณ์เดียวให้เลือกไว้
+ * ล่วงหน้า) ถ้าเลือกอุปกรณ์ใดอุปกรณ์หนึ่งไว้ ค่านั้นจะถูกส่งไปแบบ override
+ * ทันที (ดู CommandRequestSchema ใน routes.ts) ซึ่งช่วยทั้งเรื่อง UX และ
+ * ความแม่นยำ — เพราะโมเดลเคยตีความผิดว่าประโยคหมายถึงอุปกรณ์ไหนมาแล้ว
+ * มากกว่าหนึ่งครั้งในโปรเจกต์นี้
  */
 export function ChatConsole({ agents, defaultScope, history, commandOutputs }: ChatConsoleProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -169,14 +180,17 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
   const [scope, setScope] = useState(defaultScope ?? "");
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
   const [pendingAdmin, setPendingAdmin] = useState<PendingAdminConfirmation | null>(null);
+  const [pendingErp, setPendingErp] = useState<PendingErpConfirmation | null>(null);
   const [deleteOrgConfirmText, setDeleteOrgConfirmText] = useState("");
   const [createOrgPrefill, setCreateOrgPrefill] = useState<CreateOrgPrefill | null>(null);
   const [addUserPrefill, setAddUserPrefill] = useState<AddUserPrefill | null>(null);
+  const [vendorPrefill, setVendorPrefill] = useState<VendorPrefill | null>(null);
+  const [poPrefill, setPoPrefill] = useState<PurchaseOrderPrefill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Follows the conversation as it grows — new turns from typing a command,
-  // and streamed network_diagnostic output arriving chunk by chunk both
-  // push content in below the fold, so this re-runs on either.
+  // เลื่อนตามบทสนทนาที่เพิ่มขึ้นเรื่อยๆ — ทั้งข้อความคำสั่งใหม่และผลลัพธ์
+  // network_diagnostic ที่ทยอยส่งมาต่างก็ดันเนื้อหาลงมาด้านล่าง จึงต้อง
+  // ทำงานซ้ำเมื่อค่าใดค่าหนึ่งเปลี่ยน
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -212,10 +226,21 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
             ? response.results.filter((r) => r.dispatched).map((r) => ({ commandId: r.commandId, agentId: r.agentId }))
             : undefined,
         });
+      } else if (response.status === "needs_confirmation" && "kind" in response && response.kind === "erp") {
+        // Asset Management ERP — ดู security/erpGuardrail.ts รูปแบบระบุ
+        // เป้าหมายเป็นชื่อเหมือน branch ของ admin ด้านล่าง แต่แยก
+        // pending-ID เป็นคนละชุด
+        append({
+          role: "system",
+          tone: "pending",
+          text: `This needs confirmation before it runs: ${response.reason}`,
+          reasoning: response.reasoning,
+        });
+        setPendingErp({ pendingId: response.pendingId, reason: response.reason, resolved: response.resolved });
       } else if (response.status === "needs_confirmation" && "kind" in response) {
-        // Org/user administration — see security/adminGuardrail.ts. Named
-        // target instead of a device list, and delete_organization gets
-        // its own type-the-name control below instead of a plain confirm.
+        // จัดการ org/user — ดู security/adminGuardrail.ts ระบุเป้าหมายเป็น
+        // ชื่อแทนรายการอุปกรณ์ และ delete_organization มีช่องพิมพ์ยืนยัน
+        // ชื่อของตัวเองด้านล่าง แทนปุ่มยืนยันธรรมดา
         append({
           role: "system",
           tone: "pending",
@@ -237,11 +262,26 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
           reason: response.reason,
           resolved: response.resolved,
         });
+      } else if (response.status === "erp_form") {
+        // ยังไม่มีการสร้างอะไรจริง เหมือน admin_form ด้านล่าง — แค่เปิด
+        // VendorFormModal/PurchaseOrderFormModal ตัวเดียวกับที่หน้า
+        // Vendors/Purchase Orders ใช้ พร้อมข้อมูลที่ดึงมาให้ล่วงหน้า
+        append({
+          role: "system",
+          tone: "info",
+          text:
+            response.formAction === "create_vendor"
+              ? "Opening the new-vendor form with what I could extract — review and submit when ready."
+              : "Opening the new-purchase-order form with what I could extract — review and submit when ready.",
+          reasoning: response.reasoning,
+        });
+        if (response.formAction === "create_vendor") setVendorPrefill(response.prefill);
+        else setPoPrefill(response.prefill);
       } else if (response.status === "admin_form") {
-        // Nothing has been created yet — this opens the exact same,
-        // already-validated modal a human uses by clicking "Create
-        // organization"/"Add user", just pre-filled with what the request
-        // extracted. The operator reviews/edits/submits normally.
+        // ยังไม่มีการสร้างอะไรจริง — เปิด modal ตัวเดียวกับที่คนกดปุ่ม
+        // "Create organization"/"Add user" ใช้ (validate เหมือนเดิมทุก
+        // อย่าง) เพียงแต่กรอกข้อมูลที่ดึงได้ให้ล่วงหน้า ผู้ใช้ยังต้อง
+        // ตรวจสอบ/แก้ไข/กดส่งเองตามปกติ
         append({
           role: "system",
           tone: "info",
@@ -254,9 +294,9 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
         if (response.formAction === "create_organization") setCreateOrgPrefill(response.prefill);
         else setAddUserPrefill(response.prefill);
       } else if (response.status === "admin_result" && "resultAction" in response) {
-        // generate_installer — nothing to confirm, just hand back a
-        // download button reusing the exact same installer routes the
-        // Downloads/Organizations pages already use.
+        // generate_installer — ไม่มีอะไรต้องยืนยัน แค่ส่งปุ่มดาวน์โหลด
+        // กลับมา โดยใช้ route ตัวติดตั้งตัวเดียวกับที่หน้า
+        // Downloads/Organizations ใช้อยู่แล้ว
         append({
           role: "system",
           tone: "success",
@@ -265,14 +305,14 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
           installer: { orgId: response.installerOrgId, subdomain: response.subdomain, ownOrg: response.ownOrg },
         });
       } else if (response.status === "admin_result") {
-        // Only reachable in practice via confirmCommand, not here — kept
-        // for type exhaustiveness against the shared CommandApiResponse
-        // union (see lib/types.ts).
+        // ในทางปฏิบัติเข้าถึงได้ผ่าน confirmCommand เท่านั้น ไม่ใช่ตรงนี้
+        // — คงไว้เพื่อให้ครบทุก case ของ union CommandApiResponse (ดู
+        // lib/types.ts)
         append({ role: "system", tone: "success", text: response.message });
       } else {
-        // "answered" — a read-only question (or a request that didn't map
-        // to a specific action at all, see `fallback`); nothing was
-        // dispatched anywhere, this is just the answer text.
+        // "answered" — คำถามแบบอ่านอย่างเดียว (หรือคำขอที่จับคู่กับ action
+        // ใดไม่ได้เลย ดู `fallback`) ไม่มีการส่งคำสั่งไปที่ไหน มีแค่
+        // ข้อความคำตอบเฉยๆ
         append({
           role: "system",
           tone: response.answerable ? "info" : "pending",
@@ -336,6 +376,28 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
 
   function handleCancelAdmin(): void {
     setPendingAdmin(null);
+    append({ role: "system", tone: "info", text: "Cancelled — nothing was sent." });
+  }
+
+  async function handleConfirmErp(): Promise<void> {
+    if (!pendingErp || busy) return;
+    setBusy(true);
+    try {
+      const response = await confirmCommand(pendingErp.pendingId);
+      if (response.status === "admin_result" && "message" in response) {
+        append({ role: "system", tone: "success", text: response.message });
+      }
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Unexpected error confirming the command.";
+      append({ role: "system", tone: "error", text: message });
+    } finally {
+      setPendingErp(null);
+      setBusy(false);
+    }
+  }
+
+  function handleCancelErp(): void {
+    setPendingErp(null);
     append({ role: "system", tone: "info", text: "Cancelled — nothing was sent." });
   }
 
@@ -451,10 +513,10 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
         onCancel={handleCancel}
       />
 
-      {/* Same yes/no confirmation as the device dialog above, for every
-          admin action except delete_organization — that one gets a
-          stricter type-the-name control below, mirroring the Organizations
-          page's own DeleteOrgModal (the one truly irreversible action). */}
+      {/* ยืนยันแบบใช่/ไม่ใช่เหมือน dialog ของอุปกรณ์ด้านบน ใช้กับทุก action
+          ของ admin ยกเว้น delete_organization ที่มีช่องพิมพ์ยืนยันชื่อ
+          เข้มงวดกว่าด้านล่าง ตามแบบ DeleteOrgModal ของหน้า Organizations
+          (action เดียวที่ย้อนกลับไม่ได้จริงๆ) */}
       <ConfirmDialog
         open={pendingAdmin !== null && pendingAdmin.resolved.action !== "delete_organization"}
         title="Confirm this action?"
@@ -497,6 +559,39 @@ export function ChatConsole({ agents, defaultScope, history, commandOutputs }: C
             </div>
           </div>
         </div>
+      )}
+
+      <ConfirmDialog
+        open={pendingErp !== null}
+        title="Confirm this action?"
+        message={pendingErp ? pendingErp.reason : ""}
+        confirmLabel="Confirm"
+        tone="warning"
+        busy={busy}
+        onConfirm={handleConfirmErp}
+        onCancel={handleCancelErp}
+      />
+
+      {vendorPrefill && (
+        <VendorFormModal
+          prefill={vendorPrefill}
+          onClose={() => setVendorPrefill(null)}
+          onSaved={() => {
+            setVendorPrefill(null);
+            append({ role: "system", tone: "success", text: "Vendor created." });
+          }}
+        />
+      )}
+
+      {poPrefill && (
+        <PurchaseOrderFormModal
+          prefill={poPrefill}
+          onClose={() => setPoPrefill(null)}
+          onCreated={() => {
+            setPoPrefill(null);
+            append({ role: "system", tone: "success", text: "Purchase order created." });
+          }}
+        />
       )}
 
       {createOrgPrefill && (

@@ -1,9 +1,9 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
-// The ".glass-card rounded-xl" combination already repeated across most
-// pages (organizations, users, the main dashboard, ...) — a thin wrapper so
-// new pages reach for one component instead of re-typing the same three
-// classes, not a new visual treatment.
+// การผสม class ".glass-card rounded-xl" ซ้ำอยู่แล้วในเกือบทุกหน้า
+// (organizations, users, dashboard หลัก, ...) — ห่อไว้บางๆ เพื่อให้หน้า
+// ใหม่ๆ เรียกใช้ component เดียวแทนพิมพ์ class สามตัวซ้ำ ไม่ได้เป็นการ
+// เปลี่ยนรูปแบบภาพใหม่แต่อย่างใด
 interface PanelProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }

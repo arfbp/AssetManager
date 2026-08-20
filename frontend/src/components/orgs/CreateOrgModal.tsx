@@ -7,10 +7,10 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-// Subdomain preview mirrors session.ts's currentOrgSubdomain() — this org
-// won't actually be reachable at "<subdomain>.optifleet.ai" until Phase 6's
-// real domain/DNS is live; shown here so the operator can see what they're
-// committing to before creating the row.
+// การพรีวิว subdomain ใช้ตรรกะเดียวกับ currentOrgSubdomain() ใน
+// session.ts — org นี้ยังเข้าไม่ได้จริงที่ "<subdomain>.optifleet.ai"
+// จนกว่า domain/DNS จริงของ Phase 6 จะพร้อมใช้งาน แสดงไว้ตรงนี้เพื่อให้
+// ผู้ใช้เห็นว่ากำลังจะผูกกับชื่ออะไรก่อนสร้างรายการจริง
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -30,11 +30,11 @@ export interface CreateOrgPrefill {
 interface CreateOrgModalProps {
   onClose: () => void;
   onCreated: (result: CreateOrgResult) => void;
-  // Best-effort values extracted by the AI console (see
-  // server/src/security/adminGuardrail.ts's "admin_form" verdict) — the
-  // operator still reviews and can edit every field before submitting;
-  // nothing is created until they do. Empty/undefined when opened from the
-  // Organizations page's own "Create organization" button.
+  // ค่าที่ดึงมาแบบเดาที่ดีที่สุดจาก AI console (ดูผลตัดสิน "admin_form"
+  // ใน server/src/security/adminGuardrail.ts) — ผู้ใช้ยังต้องตรวจสอบและ
+  // แก้ไขได้ทุก field ก่อนกดส่งอยู่ดี ไม่มีอะไรถูกสร้างจนกว่าจะกดยืนยัน
+  // เป็น empty/undefined เมื่อเปิดจากปุ่ม "Create organization" ของหน้า
+  // Organizations เอง
   prefill?: CreateOrgPrefill;
 }
 

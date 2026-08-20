@@ -17,12 +17,12 @@ interface InstalledProgram {
   quietUninstallString: string;
 }
 
-// Queries the same three registry locations Control Panel's "Programs and
-// Features" reads from — HKLM (64-bit), HKLM\WOW6432Node (32-bit apps on a
-// 64-bit OS), and HKCU (per-user installs). SystemComponent=1 entries and
-// anything with no DisplayName are Windows' own internal pieces (patches,
-// runtimes registered as components, etc.), not something an operator would
-// ever mean to uninstall — filtered out the same way Control Panel hides them.
+// ดึงข้อมูลจาก registry 3 ตำแหน่งเดียวกับที่ Control Panel's "Programs and
+// Features" อ่าน — HKLM (64-bit), HKLM\WOW6432Node (แอป 32-bit บน OS 64-bit)
+// และ HKCU (ติดตั้งระดับ per-user) ส่วน entry ที่ SystemComponent=1 หรือ
+// ไม่มี DisplayName คือชิ้นส่วนภายในของ Windows เอง (patch, runtime ที่ลง
+// ทะเบียนเป็น component ฯลฯ) ไม่ใช่สิ่งที่ operator ต้องการ uninstall —
+// กรองออกด้วยหลักการเดียวกับที่ Control Panel ซ่อนพวกนี้
 const SCAN_SCRIPT = [
   `$ErrorActionPreference = "Stop"`,
   `$paths = @(`,
@@ -48,31 +48,30 @@ function parseInstalledPrograms(lines: string[]): InstalledProgram[] {
   }
 }
 
-// MSI-based uninstalls (UninstallString like "MsiExec.exe /X{GUID}") support
-// a standard silent flag; anything else's real silent switches vary by
-// vendor, same reasoning as Software Deploy's defaultInstallCommand — this
-// is a starting point the operator reviews and edits, never trusted as-is.
+// การ uninstall แบบ MSI (UninstallString ที่หน้าตาแบบ "MsiExec.exe /X{GUID}")
+// รองรับ silent flag มาตรฐาน ส่วนตัวอื่นแต่ละ vendor มี silent switch ที่ต่างกัน
+// จริง ๆ เหตุผลเดียวกับ defaultInstallCommand ของ Software Deploy — นี่เป็นแค่
+// จุดเริ่มต้นที่ operator ต้องตรวจและแก้ไขเอง ไม่ใช่ค่าที่เชื่อถือได้ทันที
 function defaultUninstallCommand(app: InstalledProgram): string {
   const raw = app.quietUninstallString || app.uninstallString;
   const isMsi = /^msiexec(\.exe)?\s+\/x/i.test(raw.trim());
   const command = isMsi && !app.quietUninstallString ? `${raw} /quiet /norestart` : raw;
-  // PowerShell single-quoted strings need only their own embedded quotes
-  // doubled — no $ or backtick interpretation to worry about, unlike the
-  // double-quoted string this used to be built as.
+  // string แบบ single-quote ใน PowerShell ต้อง escape แค่ quote ที่อยู่ข้างใน
+  // ตัวมันเอง (ทำซ้ำสองตัว) — ไม่ต้องกังวลเรื่อง $ หรือ backtick ถูกตีความ
+  // เหมือนตอนที่เคยสร้างเป็น double-quoted string
   const psLiteral = command.replace(/'/g, "''");
   return [
-    // A registry UninstallString is a whole command line (quoted path plus
-    // its own arguments, or sometimes an unquoted path that itself contains
-    // spaces), not a bare executable path — so it gets parsed into an exe
-    // path + argument string here and launched directly with Start-Process,
-    // rather than handed to `cmd.exe /c` as originally implemented.
-    // cmd.exe's own quote-stripping rule for /c is notorious for exactly
-    // this case: verified on real hardware that a quoted, spaced path
-    // launched via `cmd /c "<path> args"` comes out the other side
-    // mis-split at the first space ('C:\Program' is not recognized as an
-    // internal or external command) — Start-Process's own -FilePath/
-    // -ArgumentList launches the target process directly, with no
-    // intermediate shell to re-interpret the quoting at all.
+    // UninstallString ใน registry คือ command line เต็มรูปแบบ (path ที่มี
+    // quote ครอบพร้อม argument ของมันเอง หรือบางทีก็เป็น path ไม่มี quote ที่
+    // ตัวมันเองมี space อยู่) ไม่ใช่แค่ path ของ executable เฉย ๆ — โค้ดตรงนี้
+    // เลย parse แยกเป็น exe path + argument string แล้วเรียกด้วย Start-Process
+    // โดยตรง แทนที่จะส่งให้ `cmd.exe /c` แบบที่เคยทำไว้ตอนแรก
+    // กฎการ strip quote ของ cmd.exe ตอนใช้ /c เป็นที่รู้กันว่ามีปัญหากับเคส
+    // แบบนี้พอดี: ยืนยันแล้วบนเครื่องจริงว่า path ที่มี quote ครอบและมี space
+    // เมื่อสั่งผ่าน `cmd /c "<path> args"` จะถูกตัดผิดที่ space ตัวแรก
+    // ('C:\Program' ไม่ถูกจำว่าเป็นคำสั่งภายในหรือภายนอก) — ส่วน -FilePath/
+    // -ArgumentList ของ Start-Process จะเรียก process เป้าหมายตรง ๆ โดยไม่มี
+    // shell กลางมาตีความ quote ซ้ำอีกชั้นเลย
     `$raw = '${psLiteral}'`,
     `if ($raw.StartsWith('"')) {`,
     `    $i = $raw.IndexOf('"', 1)`,
@@ -82,11 +81,11 @@ function defaultUninstallCommand(app: InstalledProgram): string {
     `    $exePath = $raw`,
     `    $exeArgs = ""`,
     `} else {`,
-    // Unquoted AND the raw string itself isn't a real file (so it must
-    // carry trailing arguments) — try each space-delimited prefix in turn
-    // and keep the longest one that's an actual file, since an unquoted
-    // vendor-supplied path can itself contain spaces (e.g. "C:\Program
-    // Files (x86)\Vendor\uninstall.exe -s", no quotes at all).
+    // กรณีไม่มี quote ครอบ และ raw string ทั้งเส้นก็ไม่ใช่ไฟล์จริง (แปลว่า
+    // ต้องมี argument ต่อท้ายอยู่) — ลองตัดทีละ prefix คั่นด้วย space แล้ว
+    // เลือกอันที่ยาวที่สุดที่เป็นไฟล์จริง เพราะ path ที่ vendor ให้มาแบบไม่มี
+    // quote ก็อาจมี space อยู่ในตัวมันเองได้เหมือนกัน (เช่น "C:\Program
+    // Files (x86)\Vendor\uninstall.exe -s" ที่ไม่มี quote เลย)
     `    $exePath = $null`,
     `    $searchFrom = 0`,
     `    while ($true) {`,
@@ -101,48 +100,47 @@ function defaultUninstallCommand(app: InstalledProgram): string {
     `        if ($spaceIdx -ge 0) { $exePath = $raw.Substring(0, $spaceIdx); $exeArgs = $raw.Substring($spaceIdx + 1).Trim() } else { $exePath = $raw; $exeArgs = "" }`,
     `    }`,
     `}`,
-    // -PassThru + an explicit exit-code check: a real uninstaller some
-    // vendors ship writes alarming-looking diagnostic text to stderr even
-    // on a genuinely successful run (verified on real hardware — Brave's
-    // Chromium-based uninstaller logs "Access is denied" trying to relaunch
-    // itself for a confirmation dialog it doesn't need under a SYSTEM/no-
-    // desktop session, then still finishes and exits 0) — so success/
-    // failure is judged by the real exit code, never by whether the output
-    // merely contains the word "error". 3010 = Windows Installer's
-    // "succeeded, reboot needed," not a failure.
+    // ใช้ -PassThru พร้อมเช็ค exit code ตรง ๆ: uninstaller จริงของบาง vendor
+    // เขียนข้อความ diagnostic ที่ดูน่ากลัวลง stderr แม้รันสำเร็จจริง ๆ ก็ตาม
+    // (ยืนยันแล้วบนเครื่องจริง — uninstaller ของ Brave ที่ทำจาก Chromium ขึ้น
+    // log "Access is denied" ตอนพยายาม relaunch ตัวเองเพื่อเปิด dialog
+    // ยืนยันที่มันไม่จำเป็นต้องมีภายใต้ session แบบ SYSTEM/ไม่มี desktop
+    // แต่สุดท้ายก็รันจบและ exit 0) — เพราะงั้นการตัดสินสำเร็จ/ล้มเหลวจึงดูจาก
+    // exit code จริงเท่านั้น ไม่ใช่ดูว่า output มีคำว่า "error" โผล่มาหรือไม่
+    // ส่วน 3010 คือรหัสของ Windows Installer ที่แปลว่า "สำเร็จ แต่ต้อง
+    // reboot" ไม่ใช่ความล้มเหลว
     //
-    // Bounded wait instead of an indefinite -Wait: when a program has no
-    // registered QuietUninstallString and its plain UninstallString isn't
-    // MSI-based, this launches the vendor's real interactive uninstaller —
-    // which opens a GUI wizard and blocks forever waiting for a click that
-    // will never come (verified on real hardware with Sangfor SecoClient's
-    // uninst.exe: it hung until the surrounding run_script's own 5-minute
-    // timeout killed the whole command with no useful diagnostic). Killing
-    // the process tree and throwing a specific message after a much shorter
-    // watchdog turns that into a fast, actionable error instead.
+    // ใช้การรอแบบมีเวลาจำกัดแทน -Wait แบบไม่มีกำหนด: เมื่อโปรแกรมไม่มี
+    // QuietUninstallString ลงทะเบียนไว้ และ UninstallString ธรรมดาก็ไม่ใช่
+    // แบบ MSI โค้ดตรงนี้จะไปเรียก uninstaller แบบ interactive จริงของ vendor
+    // ซึ่งเปิด GUI wizard แล้วค้างรอการคลิกที่ไม่มีทางเกิดขึ้น (ยืนยันแล้วบน
+    // เครื่องจริงกับ uninst.exe ของ Sangfor SecoClient: มันค้างจนกระทั่ง
+    // timeout 5 นาทีของ run_script ที่ครอบอยู่ฆ่าคำสั่งทั้งหมดทิ้งโดยไม่มี
+    // diagnostic ที่เป็นประโยชน์เลย) การฆ่า process tree แล้วโยน error message
+    // เฉพาะเจาะจงหลัง watchdog ที่สั้นกว่ามากนี้ ช่วยเปลี่ยนให้กลายเป็น error
+    // ที่เร็วและแก้ไขได้จริงแทน
     `if ($exeArgs) { $proc = Start-Process -FilePath $exePath -ArgumentList $exeArgs -NoNewWindow -PassThru } else { $proc = Start-Process -FilePath $exePath -NoNewWindow -PassThru }`,
-    // Reading .Handle immediately forces .NET to retain a proper process
-    // handle — skip this and $proc.ExitCode silently comes back blank once
-    // WaitForExit(ms) is used instead of -Wait (verified directly: without
-    // this line a process that exits with code 7 reports ExitCode as "").
+    // การอ่าน .Handle ทันทีบังคับให้ .NET เก็บ process handle ที่ถูกต้องไว้ —
+    // ถ้าข้ามบรรทัดนี้ $proc.ExitCode จะเงียบ ๆ กลับมาเป็นค่าว่างทันทีที่ใช้
+    // WaitForExit(ms) แทน -Wait (ยืนยันโดยตรงแล้ว: ถ้าไม่มีบรรทัดนี้ process
+    // ที่ exit ด้วยโค้ด 7 จะรายงาน ExitCode เป็น "")
     `$proc.Handle | Out-Null`,
     `if (-not $proc.WaitForExit(90000)) {`,
     `    Start-Process -FilePath "taskkill.exe" -ArgumentList "/PID", $proc.Id, "/T", "/F" -NoNewWindow -Wait -ErrorAction SilentlyContinue`,
     `    throw "uninstaller did not finish within 90s and was terminated - it likely opened an interactive dialog with no one to click it (no silent switch registered for this program). Edit the command above to add the vendor's silent/quiet uninstall flag and try again."`,
     `}`,
     `if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) { throw "uninstaller exited with code $($proc.ExitCode)" }`,
-    // Exit code 0 alone isn't proof anything happened: verified on real
-    // hardware with GOM Player (no QuietUninstallString) — its interactive
-    // uninstaller launched fine, immediately exited 0, and yet the registry
-    // entry, install directory, and desktop shortcut were all still there
-    // afterwards, unchanged. Under a SYSTEM/no-desktop session it likely
-    // couldn't paint its confirmation dialog and just gave up instead of
-    // hanging (the case the 90s watchdog above catches) — silently, with a
-    // "successful" exit code. Re-querying the same registry uninstall keys
-    // the scan itself reads from and confirming this DisplayName is
-    // actually gone is the only way to catch that; a hung child process
-    // wouldn't be visible here either, so this isn't redundant with the
-    // watchdog above, it's the case that one can't catch.
+    // exit code 0 อย่างเดียวไม่ใช่หลักฐานว่าเกิดอะไรขึ้นจริง: ยืนยันแล้วบน
+    // เครื่องจริงกับ GOM Player (ไม่มี QuietUninstallString) — uninstaller
+    // แบบ interactive ของมันรันขึ้นได้ปกติ exit 0 ทันที แต่ registry entry,
+    // install directory และ desktop shortcut ยังอยู่ครบเหมือนเดิมทุกอย่าง
+    // เดาว่าภายใต้ session แบบ SYSTEM/ไม่มี desktop มันคงวาด confirmation
+    // dialog ไม่ได้ เลยแค่ยอมแพ้เงียบ ๆ แทนที่จะค้าง (ซึ่งเป็นเคสที่ watchdog
+    // 90 วินาทีด้านบนจับได้) แล้วให้ exit code แบบ "สำเร็จ" ออกมา การ query
+    // registry uninstall key ชุดเดียวกับที่ตัว scan อ่านซ้ำอีกครั้งเพื่อเช็คว่า
+    // DisplayName นี้หายไปจริงหรือยัง เป็นวิธีเดียวที่จับเคสนี้ได้ ส่วน child
+    // process ที่ค้างอยู่ก็จะไม่โผล่มาให้เห็นตรงนี้เหมือนกัน เพราะงั้นนี่ไม่ได้
+    // ซ้ำซ้อนกับ watchdog ด้านบน แต่เป็นเคสที่ watchdog จับไม่ได้ต่างหาก
     `$stillInstalled = Get-ItemProperty -Path @("HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*", "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*", "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*") -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq '${app.name.replace(/'/g, "''")}' }`,
     `if ($stillInstalled) { throw "uninstaller exited 0 but '${app.name.replace(/'/g, "''")}' is still registered as installed - it likely needs an interactive desktop session to actually run (no silent switch available). Try uninstalling it manually on the device, or edit the command above if you know its real silent-uninstall flag." }`,
   ].join("\n");
@@ -250,8 +248,8 @@ function UninstallSoftware({ username }: { username: string }) {
     }
   }
 
-  // Picks up the scan's result the moment it lands (commandOutputs updates
-  // live via the dashboard socket) rather than requiring a second click.
+  // รับผลลัพธ์ของการ scan ทันทีที่มันมาถึง (commandOutputs อัปเดตแบบ live
+  // ผ่าน dashboard socket) โดยไม่ต้องให้ผู้ใช้คลิกซ้ำอีกครั้ง
   useEffect(() => {
     if (!scanOutput?.done) return;
     if (scanOutput.error) {
@@ -350,13 +348,12 @@ function UninstallSoftware({ username }: { username: string }) {
 
       </div>
 
-      {/* A real popup, not an inline section at the end of the page — with
-          up to 80+ program cards above it, an inline section landed far
-          below whichever card was clicked, so reaching it meant scrolling
-          all the way down every time. Popping up immediately here also
-          means this review-and-edit step IS the confirmation: there's no
-          second "are you sure?" stacked on top of it once the operator has
-          already seen the exact command and clicked Uninstall. */}
+      {/* ใช้ popup จริง ๆ ไม่ใช่ section แบบ inline ท้ายหน้า — เพราะด้านบนมี
+          program card ได้ถึง 80+ ใบ ถ้าเป็น inline section จะอยู่ไกลจาก
+          การ์ดที่คลิกไปมาก ต้อง scroll ลงสุดทุกครั้งกว่าจะเจอ การเด้ง popup
+          ขึ้นมาทันทีแบบนี้ยังทำให้ขั้นตอน review-and-edit นี้เป็นการ confirm
+          ในตัวเลยด้วย ไม่ต้องมีคำถาม "แน่ใจไหม" อีกชั้นซ้อนทับ หลังจาก
+          operator เห็นคำสั่งจริงแล้วกด Uninstall ไปแล้ว */}
       {selectedApp && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <button
@@ -406,10 +403,9 @@ function UninstallSoftware({ username }: { username: string }) {
               >
                 {uninstallCommandId ? "Close" : "Cancel"}
               </button>
-              {/* Hidden once a result lands — DeployProgress above already
-                  shows ✓/✗, so a still-visible "Uninstall" button here would
-                  just invite a confusing second click on a command that
-                  already ran. */}
+              {/* ซ่อนทันทีที่มีผลลัพธ์ออกมา — DeployProgress ด้านบนแสดง ✓/✗
+                  ให้แล้ว ถ้าปุ่ม "Uninstall" ยังค้างอยู่ตรงนี้ก็จะชวนให้กดซ้ำ
+                  ทั้งที่คำสั่งรันจบไปแล้ว ทำให้สับสนเปล่า ๆ */}
               {!uninstallOutput?.done && (
                 <button
                   type="button"

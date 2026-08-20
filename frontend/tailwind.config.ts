@@ -1,10 +1,9 @@
 import type { Config } from "tailwindcss";
 
-// Color roles are CSS custom properties (see src/app/globals.css) so light/
-// dark values swap in one place — Tailwind classes reference the role
-// (bg-surface, text-status-warning, …), never a raw hex. Values come from
-// the dataviz skill's validated reference palette (status colors are fixed,
-// never themed — see globals.css for the source comment).
+// Role สีเป็น CSS custom property (ดู src/app/globals.css) ค่า light/dark
+// จึงสลับได้จากจุดเดียว — คลาสของ Tailwind อ้างอิงตาม role เสมอ
+// (bg-surface, text-status-warning, …) ไม่ใช้ hex ตรง ๆ สีสถานะเป็นค่า
+// ตายตัว ไม่เปลี่ยนตามธีม — ดู comment ต้นทางใน globals.css
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   darkMode: ["class", '[data-theme="dark"]'],

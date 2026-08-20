@@ -13,13 +13,12 @@ var (
 	procEmptyWorkingSet = modpsapi.NewProc("EmptyWorkingSet")
 )
 
-// TrimWorkingSet asks Windows to trim the target process's working set
-// (physical RAM pages backing it), forcing infrequently-touched pages out to
-// the page file. It does not free leaked memory the process itself is still
-// holding onto — it only reduces the *physical* footprint reported in Task
-// Manager until the process touches those pages again. That matches the
-// "clean working set" request: a safe, reversible first response, distinct
-// from killing the process outright.
+// TrimWorkingSet ขอให้ Windows trim working set ของ process เป้าหมาย
+// (หน้า RAM จริงที่รองรับมันอยู่) บังคับให้หน้าที่ไม่ค่อยถูกแตะออกไปอยู่ใน
+// page file แทน ไม่ได้คืนหน่วยความจำที่ leak ที่ process เองยังถืออยู่ —
+// แค่ลด footprint ทาง *physical* ที่แสดงใน Task Manager จนกว่า process จะ
+// กลับมาแตะหน้าเหล่านั้นอีก ตรงกับคำขอ "clean working set" พอดี: เป็นการ
+// ตอบสนองแรกที่ปลอดภัยและย้อนกลับได้ ต่างจากการ kill process ไปเลย
 func TrimWorkingSet(pid int32) error {
 	const desiredAccess = windows.PROCESS_QUERY_INFORMATION | windows.PROCESS_SET_QUOTA
 	handle, err := windows.OpenProcess(desiredAccess, false, uint32(pid))

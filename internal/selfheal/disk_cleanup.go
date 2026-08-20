@@ -10,15 +10,15 @@ import (
 )
 
 type DiskCleanupConfig struct {
-	// FreeThresholdPercent triggers cleanup when a disk's free space drops
-	// below this (i.e. UsedPercent >= 100-FreeThresholdPercent).
+	// FreeThresholdPercent สั่ง trigger cleanup เมื่อพื้นที่ว่างของดิสก์ต่ำ
+	// กว่านี้ (คือ UsedPercent >= 100-FreeThresholdPercent)
 	FreeThresholdPercent float64
-	// AllowedDirs is the same directory allowlist used by the remote
-	// clean_temp command — auto-cleanup never touches anything outside it.
+	// AllowedDirs คือ allowlist ไดเรกทอรีชุดเดียวกับที่คำสั่ง clean_temp จาก
+	// ระยะไกลใช้ — auto-cleanup ไม่แตะอะไรนอกเหนือจากนี้เลย
 	AllowedDirs []string
-	// Cooldown prevents re-running cleanup every poll tick while a disk
-	// stays under threshold (e.g. because the freed space gets consumed
-	// again immediately, or cleanup couldn't free enough).
+	// Cooldown ป้องกันไม่ให้ cleanup รันซ้ำทุก poll tick ขณะที่ดิสก์ยังต่ำ
+	// กว่า threshold อยู่ (เช่น เพราะพื้นที่ที่เพิ่งเคลียร์ไปถูกใช้จนเต็มอีก
+	// ทันที หรือ cleanup เคลียร์พื้นที่ได้ไม่พอ)
 	Cooldown time.Duration
 }
 
@@ -45,9 +45,9 @@ func NewDiskCleaner(cfg DiskCleanupConfig, log, audit zerolog.Logger, onEvent fu
 	}
 }
 
-// Observe should be called with every telemetry snapshot. It is a no-op
-// unless a disk is under the configured free-space threshold and the
-// cooldown has elapsed since the last cleanup run.
+// Observe ควรถูกเรียกทุกครั้งที่มี telemetry snapshot จะไม่ทำอะไรเลย เว้น
+// แต่ดิสก์ตัวใดตัวหนึ่งจะต่ำกว่า free-space threshold ที่ตั้งไว้ และ
+// cooldown ผ่านไปแล้วนับจากการรัน cleanup ครั้งล่าสุด
 func (d *DiskCleaner) Observe(snap telemetry.Snapshot) {
 	defer func() {
 		if r := recover(); r != nil {

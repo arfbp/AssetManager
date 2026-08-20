@@ -8,9 +8,9 @@ const BAR_TONE: Record<Severity, string> = {
   critical: "bg-status-critical",
 };
 
-// A compact bar for a table cell — the card grid's <Meter> repeats its own
-// label above the bar, which reads fine once per card but is redundant
-// noise once per row when the column header already says "CPU"/"RAM"/"Disk".
+// bar แบบย่อสำหรับใช้ในเซลล์ตาราง — <Meter> ของ card grid มี label ซ้ำ
+// เหนือ bar เอง ซึ่งอ่านโอเคตอนมีการ์ดเดียว แต่ในตารางจะซ้ำซ้อนเพราะหัว
+// คอลัมน์บอกอยู่แล้วว่าเป็น "CPU"/"RAM"/"Disk"
 function CellBar({ percent, detail }: { percent: number; detail?: string }) {
   const clamped = Math.max(0, Math.min(100, percent));
   const severity = severityForPercent(clamped);
@@ -57,9 +57,11 @@ export function EndpointTable({ agents, onSelect }: EndpointTableProps) {
           <tbody>
             {agents.map((agent) => {
               const snap = agent.lastTelemetry;
-              const worstDisk = snap?.disks.length
-                ? snap.disks.reduce((worst, d) => (d.used_percent > worst.used_percent ? d : worst))
-                : null;
+              // disks เองก็เป็น null ได้ (ไม่ใช่แค่ lastTelemetry) — ฟังก์ชัน
+              // แจกแจง disk partition ของ Go agent จะคืนค่า nil เปล่าๆ เมื่อ
+              // ทำงานล้มเหลว ซึ่ง serialize ออกมาเป็น JSON null ไม่ใช่ []
+              const disks = snap?.disks ?? [];
+              const worstDisk = disks.length ? disks.reduce((worst, d) => (d.used_percent > worst.used_percent ? d : worst)) : null;
               return (
                 <tr
                   key={agent.agentId}

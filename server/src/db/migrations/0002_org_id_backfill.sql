@@ -1,13 +1,13 @@
--- Multi-tenant migration, phase 1: org_id on every tenant-scoped table,
--- backfilled onto the legacy org so today's single fleet keeps working
--- unchanged. NOT NULL added only after backfill, in the same statement
--- group, so the column is never observably nullable to application code.
+-- Multi-tenant migration เฟส 1: org_id บนทุกตารางที่ scope ตาม tenant
+-- backfill ลงไปที่ legacy org เพื่อให้ fleet เดียวที่ใช้อยู่วันนี้ยังทำงานได้
+-- เหมือนเดิม เพิ่ม NOT NULL หลัง backfill เท่านั้น อยู่ใน statement group
+-- เดียวกัน เพื่อไม่ให้โค้ดฝั่งแอปมองเห็นคอลัมน์นี้เป็น nullable ได้เลย
 --
--- sessions is deliberately skipped — org is derivable via
--- users.org_id (same as role is already read fresh via a join, not
--- duplicated onto the session row). ip_geolocation_cache is deliberately
--- skipped — a global IP->location cache with no tenant-sensitive data;
--- multiple orgs' agents behind the same office IP legitimately share a row.
+-- ตั้งใจข้าม sessions ไป — org หาได้จาก users.org_id (เหมือนกับ role ที่อ่าน
+-- สดผ่าน join อยู่แล้ว ไม่ได้ duplicate ลงบนแถว session) ตั้งใจข้าม
+-- ip_geolocation_cache ไปด้วย — เป็น cache IP->location ระดับ global ไม่มี
+-- ข้อมูลที่ผูกกับ tenant ไหนเป็นพิเศษ agent ของหลาย org ที่อยู่หลัง office IP
+-- เดียวกันแชร์แถวเดียวกันได้ตามปกติ
 
 ALTER TABLE users ADD COLUMN org_id UUID REFERENCES organizations(id);
 UPDATE users SET org_id = '00000000-0000-0000-0000-000000000001' WHERE org_id IS NULL;

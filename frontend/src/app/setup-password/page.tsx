@@ -4,10 +4,10 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { ApiError, setupPassword } from "@/lib/api";
 
-// Public — reached from a freshly created org's invite email/link, before
-// any session exists (see server/src/api/routes.ts's POST /orgs and
-// /auth/setup-password). Same dark "tech" treatment as LoginForm, since
-// this is the other half of the same "before you're logged in" moment.
+// หน้า public — เข้าถึงได้จากลิงก์/อีเมลเชิญของ org ที่เพิ่งสร้างใหม่ ก่อนที่
+// จะมี session ใด ๆ (ดู POST /orgs และ /auth/setup-password ใน
+// server/src/api/routes.ts) ใช้ธีมมืดสไตล์ "tech" เหมือน LoginForm เพราะ
+// เป็นอีกครึ่งหนึ่งของช่วง "ก่อน login" เดียวกัน
 function SetupPasswordForm() {
   const token = useSearchParams().get("token") ?? "";
   const [password, setPassword] = useState("");

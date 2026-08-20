@@ -11,16 +11,15 @@ import { ApiError, getDeviceReport, getHistory, getIncidents, killProcess, sugge
 import { formatMb, formatRelativeTime } from "@/lib/format";
 import type { AgentSummary, DeviceAnalysis, DeviceInfo, DeviceReport, HistoryEntry, HistoryEntryStatus, HistoryPoint, Incident, ProcessInfo, RemediationSuggestion } from "@/lib/types";
 
-// A monitor's `name` comes from Windows' own Win32_DesktopMonitor entry — a
-// friendly name resolved from whatever driver/INF is installed, which for a
-// monitor using the generic Windows driver (no vendor-specific one) is
-// literally "Generic PnP Monitor" regardless of what's actually connected.
-// `model`/`manufacturer` come from a completely different, more reliable
-// source instead: the panel's own EDID data (internal/telemetry/
-// devices_windows.go's WmiMonitorID query) — the real identity read off the
-// hardware itself. Prefer that whenever it resolved to something, rather
-// than the generic OS label. Guards against a redundant "HP HP 24f" when
-// the EDID model string already names the vendor itself.
+// `name` ของจอมอนิเตอร์มาจาก entry Win32_DesktopMonitor ของ Windows เอง —
+// เป็นชื่อที่ resolve จาก driver/INF ที่ติดตั้งอยู่ ซึ่งถ้าจอใช้ driver
+// generic ของ Windows (ไม่มี driver เฉพาะยี่ห้อ) จะได้ชื่อ "Generic PnP
+// Monitor" เฉยๆ ไม่ว่าจอจริงจะเป็นรุ่นอะไร ส่วน `model`/`manufacturer` มา
+// จากแหล่งข้อมูลที่น่าเชื่อถือกว่าคนละแหล่งเลย: ข้อมูล EDID ของจอเอง
+// (query WmiMonitorID ใน internal/telemetry/devices_windows.go) ซึ่งเป็น
+// identity จริงที่อ่านมาจากฮาร์ดแวร์ตรงๆ ใช้ค่านี้ก่อนเสมอถ้า resolve
+// ออกมาได้ แทนที่จะใช้ label ทั่วไปจาก OS ป้องกันไม่ให้ได้ชื่อซ้ำซ้อนแบบ
+// "HP HP 24f" ตอนที่ model string จาก EDID มีชื่อยี่ห้ออยู่แล้ว
 function monitorLabel(d: DeviceInfo): string {
   if (d.model) {
     if (d.manufacturer && !d.model.toLowerCase().includes(d.manufacturer.toLowerCase())) {
@@ -28,10 +27,10 @@ function monitorLabel(d: DeviceInfo): string {
     }
     return d.model;
   }
-  // EDID sometimes resolves a manufacturer code (WmiMonitorID.ManufacturerName)
-  // without a usable model string (UserFriendlyName empty/unset on some
-  // panels) — still real, still better than the generic OS label, even
-  // half-populated.
+  // บางครั้ง EDID resolve รหัสยี่ห้อได้ (WmiMonitorID.ManufacturerName) แต่
+  // ไม่มี model string ที่ใช้ได้ (UserFriendlyName ว่างเปล่าในบางจอ) — ถึง
+  // ข้อมูลจะได้แค่ครึ่งเดียวก็ยังเป็นข้อมูลจริง ยังดีกว่า label ทั่วไปจาก
+  // OS
   if (d.manufacturer) return `${d.manufacturer} monitor`;
   return d.name;
 }
@@ -65,28 +64,28 @@ interface RowState {
 type Tab = "chat" | "live" | "trend" | "commands" | "incidents";
 
 interface ProcessManagerDrawerProps {
-  // Distinct from `agent`: lets the drawer open in a device-less "just the
-  // AI console" mode (e.g. for a broadcast/group command) without needing
-  // any specific device selected.
+  // ต่างจาก `agent`: ทำให้ drawer เปิดในโหมด "แค่ AI console" แบบไม่มี
+  // อุปกรณ์ได้ (เช่นสำหรับคำสั่งแบบ broadcast/กลุ่ม) โดยไม่ต้องเลือก
+  // อุปกรณ์ใดเจาะจง
   open: boolean;
   agent: AgentSummary | null;
   agents: AgentSummary[];
   history: HistoryEntry[];
   onClose: () => void;
-  // Present on pages that can offer "register this device as an asset"
-  // (currently only devices the OS reports a real serial for — monitors via
-  // EDID). Absent pages just don't render the action.
+  // มีค่าเฉพาะหน้าที่เสนอ "ลงทะเบียนอุปกรณ์นี้เป็น asset" ได้ (ตอนนี้มีแค่
+  // อุปกรณ์ที่ OS รายงาน serial จริง — จอมอนิเตอร์ผ่าน EDID) หน้าที่ไม่ส่ง
+  // ค่านี้มาก็แค่ไม่ render action นี้
   onRegisterDevice?: (device: DeviceInfo, agent: AgentSummary) => void;
-  // Serial numbers that already have an asset record — a connected device
-  // matching one of these already showed up in the Asset Registry via some
-  // earlier "+ Add as asset" click (or was pre-registered by hand), so
-  // offering the button again would just invite a duplicate. Absent/empty
-  // just means every device with a serial gets the button, same as before.
+  // serial number ที่มี record asset อยู่แล้ว — อุปกรณ์ที่เชื่อมต่ออยู่และ
+  // ตรงกับตัวใดตัวหนึ่งในนี้ เคยถูกเพิ่มเข้า Asset Registry ไปแล้วผ่านการ
+  // กด "+ Add as asset" ก่อนหน้า (หรือลงทะเบียนมือไว้แล้ว) การเสนอปุ่มซ้ำ
+  // ก็แค่ชวนให้สร้างรายการซ้ำ ถ้าไม่ส่งค่านี้มาหรือว่างเปล่า อุปกรณ์ทุกตัว
+  // ที่มี serial จะได้ปุ่มตามปกติ
   registeredSerials?: Set<string>;
-  // Live streamed output for in-flight network_diagnostic commands, from
-  // useDashboardSocket() — threaded straight through to the embedded
-  // ChatConsole. Absent just means streamed output never renders (falls
-  // back to ChatConsole's own "waiting for output…" placeholder).
+  // ผลลัพธ์แบบ real-time ของคำสั่ง network_diagnostic ที่กำลังทำงานอยู่
+  // จาก useDashboardSocket() — ส่งต่อตรงเข้า ChatConsole ที่ฝังอยู่ ถ้าไม่
+  // ส่งมาก็แค่ไม่ render ผลลัพธ์แบบ stream (ใช้ placeholder "waiting for
+  // output…" ของ ChatConsole เองแทน)
   commandOutputs?: Record<string, StreamedCommandOutput>;
 }
 
@@ -107,10 +106,9 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
 
   const agentId = agent?.agentId ?? null;
 
-  // Reset to the Chat tab whenever a different device is opened — a stale
-  // Trend/Commands tab from the previously-viewed device is confusing to
-  // land on, and Chat is always valid regardless of whether telemetry
-  // exists yet for this device.
+  // สลับกลับไปแท็บ Chat ทุกครั้งที่เปิดอุปกรณ์เครื่องอื่น — ถ้าค้างอยู่ที่
+  // แท็บ Trend/Commands เก่าของอุปกรณ์ก่อนหน้าจะทำให้สับสน และแท็บ Chat
+  // ใช้ได้เสมอไม่ว่าอุปกรณ์นี้จะมี telemetry แล้วหรือยัง
   useEffect(() => {
     setActiveTab("chat");
     setReport(null);
@@ -158,21 +156,33 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
   }, [activeTab, agentId]);
 
   if (!open) return null;
-  // Only treated as "live" data when the device is actually online right
-  // now — otherwise this would show the last-known process list/meters from
-  // before it disconnected as if they were current, which is misleading
-  // (a process shown "running" here might have exited minutes before the
-  // device dropped off, or the whole machine could be powered down).
+  // ถือเป็นข้อมูล "live" ก็ต่อเมื่ออุปกรณ์ online อยู่จริงตอนนี้เท่านั้น
+  // — ไม่งั้นจะแสดงรายการ process/มิเตอร์ล่าสุดที่รู้ก่อนตัดการเชื่อมต่อ
+  // ราวกับเป็นข้อมูลปัจจุบัน ซึ่งทำให้เข้าใจผิดได้ (process ที่ขึ้นว่า
+  // "running" ตรงนี้อาจปิดไปแล้วหลายนาทีก่อนอุปกรณ์หลุด หรือทั้งเครื่อง
+  // อาจถูกปิดไปแล้วก็ได้)
   const isOnline = agent?.status === "online";
   const snap = isOnline ? (agent?.lastTelemetry ?? null) : null;
   const processes = [...(snap?.top_processes ?? [])].sort((a, b) => b.cpu_percent - a.cpu_percent);
+  // agent เวอร์ชันเก่า (และ telemetry ที่ cache ไว้จากก่อนมี local_users/
+  // current_user) ไม่เคยส่ง field พวกนี้มาเลย — เป็น undefined ไม่ใช่
+  // array ว่าง จึงสมมติว่ามีอยู่เสมอแบบ field ที่มีมาตั้งแต่แรกไม่ได้
+  const localUsers = snap?.local_users ?? [];
+  // ป้องกันเหตุผลเดียวกับ localUsers ด้านบน — เป็น field เก่าเหมือนกัน
+  // แต่ collector ฝั่ง Go ของมันเคยคืนค่า nil slice เปล่าๆ เวลาทำงาน
+  // ล้มเหลวชั่วคราว (WMI query error, disk-enumeration error, ...) ซึ่ง
+  // serialize ออกมาเป็น JSON null ไม่ใช่ [] แก้ที่ฝั่ง agent แล้วก็จริง
+  // แต่ตรงนี้ยังกันไว้สำหรับ snapshot ที่เก็บ/cache ไว้ก่อนแก้ และกัน bug
+  // แบบเดิมย้อนกลับมาในอนาคตด้วย
+  const physicalDisks = snap?.physical_disks ?? [];
+  const disks = snap?.disks ?? [];
+  const connectedDevices = snap?.connected_devices ?? [];
   const commandEntries = agentId ? history.filter((h) => h.agentId === agentId) : [];
 
-  // Keyed by agentId:pid, not pid alone — a bare PID is only unique within
-  // one device, and PID numbers repeat across machines constantly. Without
-  // the agentId component, switching to a different device that happens to
-  // reuse a PID would show that PID's stale "kill sent" / AI suggestion from
-  // the previous device as if it applied to the new one.
+  // ใช้ key เป็น agentId:pid ไม่ใช่ pid เฉยๆ — PID เพียวๆ ไม่ซ้ำแค่ภายใน
+  // อุปกรณ์เดียว แต่เลข PID ซ้ำกันข้ามเครื่องได้บ่อยมาก ถ้าไม่มีส่วน
+  // agentId พอสลับไปอุปกรณ์อื่นที่บังเอิญใช้ PID ซ้ำ จะเห็นสถานะ "kill
+  // sent" / คำแนะนำ AI เก่าจากอุปกรณ์ก่อนหน้าราวกับใช้กับเครื่องใหม่
   function rowKey(pid: number): string {
     return `${agentId}:${pid}`;
   }
@@ -288,11 +298,10 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
 
         {activeTab === "chat" ? (
           <div className="min-h-0 flex-1">
-            {/* Keyed by device: this drawer stays mounted while switching
-                between devices (no open/close in between), so without a key
-                React would reuse the same ChatConsole instance and both the
-                scope dropdown and the seeded history below would stay stuck
-                on whichever device was selected first. */}
+            {/* ใช้ key แยกตามอุปกรณ์: drawer นี้ยัง mount ค้างอยู่ตอนสลับ
+                อุปกรณ์ (ไม่มีการปิด/เปิดคั่นกลาง) ถ้าไม่มี key React จะใช้
+                ChatConsole instance เดิมซ้ำ ทำให้ dropdown scope และ
+                history ที่ดึงมาแสดงค้างอยู่ที่อุปกรณ์แรกที่เลือกไว้ */}
             <ChatConsole key={agentId ?? "none"} agents={agents} defaultScope={agentId ?? undefined} history={history} commandOutputs={commandOutputs} />
           </div>
         ) : activeTab === "trend" ? (
@@ -448,10 +457,16 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
                   <p className="text-ink-muted">RAM</p>
                   <p className="text-sm font-medium text-ink-primary">{formatMb(snap.mem_total_mb)}</p>
                 </div>
+                <div>
+                  <p className="text-ink-muted">Current user</p>
+                  <p className="truncate text-sm font-medium text-ink-primary" title={snap.current_user || undefined}>
+                    {snap.current_user || "Not logged in"}
+                  </p>
+                </div>
               </div>
-              {snap.physical_disks.length > 0 && (
+              {physicalDisks.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {snap.physical_disks.map((d, i) => (
+                  {physicalDisks.map((d, i) => (
                     <span
                       key={i}
                       title={d.model || undefined}
@@ -468,7 +483,7 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
             <section className="grid grid-cols-1 gap-3 border-b border-border px-5 py-4 sm:grid-cols-2">
               <Meter label="CPU" percent={snap.cpu_percent} />
               <Meter label="RAM" percent={snap.mem_percent} detail={`${formatMb(snap.mem_used_mb)} / ${formatMb(snap.mem_total_mb)}`} />
-              {snap.disks.map((d) => (
+              {disks.map((d) => (
                 <Meter key={d.mount_point} label={`Disk (${d.mount_point})`} percent={d.used_percent} detail={`${d.free_gb.toFixed(1)} GB free`} />
               ))}
             </section>
@@ -476,14 +491,14 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
             <section className="border-b border-border px-5 py-4">
               <h3 className="mb-3 font-semibold text-ink-primary">
                 Connected devices
-                <span className="ml-1.5 font-normal text-ink-muted">({snap.connected_devices.length})</span>
+                <span className="ml-1.5 font-normal text-ink-muted">({connectedDevices.length})</span>
               </h3>
-              {snap.connected_devices.length === 0 ? (
+              {connectedDevices.length === 0 ? (
                 <p className="text-xs text-ink-muted">No devices reported.</p>
               ) : (
                 <div className="space-y-3">
                   {(["monitor", "printer", "usb"] as const).map((type) => {
-                    const items = snap.connected_devices.filter((d) => d.type === type);
+                    const items = connectedDevices.filter((d) => d.type === type);
                     if (items.length === 0) return null;
                     return (
                       <div key={type}>
@@ -527,6 +542,32 @@ export function ProcessManagerDrawer({ open, agent, agents, history, onClose, on
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </section>
+
+            <section className="border-b border-border px-5 py-4">
+              <h3 className="mb-3 font-semibold text-ink-primary">
+                Local user accounts
+                <span className="ml-1.5 font-normal text-ink-muted">({localUsers.length})</span>
+              </h3>
+              {localUsers.length === 0 ? (
+                <p className="text-xs text-ink-muted">No local accounts reported.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {localUsers.map((u) => (
+                    <div key={u.username} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs">
+                      <span className={`font-medium ${u.disabled ? "text-ink-muted line-through" : "text-ink-primary"}`}>{u.username}</span>
+                      {u.full_name && u.full_name !== u.username && <span className="text-ink-muted">{u.full_name}</span>}
+                      <span className="flex-1" />
+                      {u.is_admin && (
+                        <span className="rounded bg-status-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-status-warning">Admin</span>
+                      )}
+                      {u.disabled && (
+                        <span className="rounded bg-status-critical/10 px-1.5 py-0.5 text-[11px] font-medium text-status-critical">Disabled</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </section>

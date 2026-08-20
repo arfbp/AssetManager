@@ -27,16 +27,16 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-// Same fixed UUID as server/src/orgs/orgsStore.ts's PLATFORM_ORG_ID — this
-// org holds the only accounts that can manage every other org, so its own
-// row never gets suspend/delete actions (the server rejects both anyway;
-// disabling them here just avoids a doomed request and a confusing error).
+// UUID คงที่ตัวเดียวกับ PLATFORM_ORG_ID ใน server/src/orgs/orgsStore.ts —
+// org นี้ถือ account เดียวที่จัดการ org อื่นทั้งหมดได้ แถวของมันเองเลยไม่มี
+// ปุ่ม suspend/delete (server ปฏิเสธทั้งคู่อยู่แล้ว การปิดปุ่มตรงนี้แค่กันไม่
+// ให้ยิง request ที่รู้อยู่แล้วว่าพังและได้ error ที่งง ๆ)
 const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
-// Shown exactly once, right after creation — organizations.agent_auth_token/
-// agent_hmac_secret are never returned by any other endpoint (see
-// server/src/orgs/orgsStore.ts), same "write it down now" treatment as any
-// other freshly generated secret.
+// โชว์ครั้งเดียวตอนสร้างเสร็จเท่านั้น — organizations.agent_auth_token/
+// agent_hmac_secret จะไม่ถูกส่งกลับจาก endpoint อื่นอีกเลย (ดู
+// server/src/orgs/orgsStore.ts) ใช้แนวทาง "จดไว้ตอนนี้เลย" เหมือน secret
+// ที่เพิ่ง generate ใหม่ทั่วไป
 function CredentialsModal({ result, onClose }: { result: CreateOrgResult; onClose: () => void }) {
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -126,13 +126,12 @@ interface CustomDomainModalProps {
   onDone: (org: OrganizationSummary) => void;
 }
 
-// Lets an org be reached at its own fully-owned domain (e.g.
-// assets.360qm.co.th) instead of the shared subdomain-under-orgDomainSuffix
-// pattern — this only registers the domain at the app layer (login
-// resolution + CORS, see server/src/api/routes.ts's POST
-// /orgs/:id/custom-domain). DNS still has to be pointed at this deployment
-// by the customer, and a TLS certificate covering the domain still has to
-// exist — see scripts/add-custom-domain.sh on the VPS for that half.
+// ให้ org เข้าถึงได้ผ่าน domain ของตัวเองที่เป็นเจ้าของเต็ม ๆ (เช่น
+// assets.360qm.co.th) แทนที่จะใช้ pattern subdomain-under-orgDomainSuffix
+// ที่แชร์กัน — ตรงนี้แค่ register domain ที่ app layer (login resolution +
+// CORS ดู POST /orgs/:id/custom-domain ใน server/src/api/routes.ts) ลูกค้า
+// ยังต้องไปชี้ DNS มาที่ deployment นี้เอง และต้องมี TLS certificate ที่
+// ครอบ domain นั้นด้วย — อีกครึ่งดูที่ scripts/add-custom-domain.sh บน VPS
 function CustomDomainModal({ org, onClose, onDone }: CustomDomainModalProps) {
   const [domain, setDomain] = useState(org.customDomain ?? "");
   const [busy, setBusy] = useState(false);
@@ -292,11 +291,11 @@ interface DeleteOrgModalProps {
   onDeleted: () => void;
 }
 
-// Real, irreversible deletion (server/src/orgs/orgsStore.ts's
-// deleteOrganization) — requires typing the org's exact name before the
-// button enables, the same "type to confirm" pattern common SaaS dashboards
-// use for their one truly unrecoverable action. A plain yes/no ConfirmDialog
-// is used for suspend elsewhere on this page, since suspend is reversible.
+// เป็นการลบจริงและกู้คืนไม่ได้ (deleteOrganization ใน
+// server/src/orgs/orgsStore.ts) — ต้องพิมพ์ชื่อ org ให้ตรงเป๊ะก่อนปุ่มจะกด
+// ได้ ใช้ pattern "type to confirm" แบบที่ SaaS dashboard ทั่วไปใช้กับ action
+// ที่กู้คืนไม่ได้จริง ๆ ส่วน suspend ที่อื่นในหน้านี้ใช้ ConfirmDialog แบบ
+// yes/no ธรรมดา เพราะ suspend ยกเลิกได้
 function DeleteOrgModal({ org, onClose, onDeleted }: DeleteOrgModalProps) {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -419,10 +418,10 @@ interface ManageUsersModalProps {
   onClose: () => void;
 }
 
-// Support tooling for exactly the "this org's only admin forgot their
-// password and can't log in at all, so the normal same-org self-service
-// reset on the Users page is unreachable" case — see
-// server/src/api/routes.ts's GET/POST /orgs/:id/users... doc comment.
+// เครื่องมือสำหรับ support รองรับเคส "admin คนเดียวของ org นี้ลืม password
+// เข้าระบบไม่ได้เลย เลยใช้หน้า Users แบบ self-service reset ปกติ (ที่ต้องอยู่
+// ใน org เดียวกัน) ไม่ได้" — ดู doc comment ของ GET/POST /orgs/:id/users
+// ใน server/src/api/routes.ts
 function ManageUsersModal({ org, onClose }: ManageUsersModalProps) {
   const [users, setUsers] = useState<UserSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -567,9 +566,9 @@ function Organizations({ username }: { username: string }) {
       .catch((err) => setLoadError(errorMessage(err, "Couldn't load organizations.")));
   }
 
-  // Suspending is disruptive (blocks that org's logins and agent
-  // connections immediately) so it goes through a confirm dialog;
-  // reactivating just undoes that, no confirmation needed.
+  // suspend มีผลกระทบทันที (บล็อค login และ agent connection ของ org นั้น
+  // ทันที) เลยต้องผ่าน confirm dialog ก่อน ส่วน reactivate แค่ยกเลิกผลนั้น
+  // ไม่ต้อง confirm
   async function handleReactivate(org: OrganizationSummary): Promise<void> {
     setStatusBusyId(org.id);
     setActionError(null);

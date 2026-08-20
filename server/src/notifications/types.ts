@@ -1,8 +1,8 @@
-// Outbound notification config + event shape — see dispatcher.ts for the
-// fan-out logic and channels/ for each integration. Every channel is
-// independently optional: an unset webhook URL/SMTP host just means that
-// channel is skipped, not an error (most deployments will only want one or
-// two of these, not all).
+// รูปร่างของ config การแจ้งเตือนขาออก + event — ดู dispatcher.ts สำหรับ
+// logic การกระจาย และ channels/ สำหรับแต่ละ integration แต่ละ channel
+// เป็น optional แยกอิสระ: webhook URL/SMTP host ที่ไม่ได้ตั้งค่าแปลว่า
+// channel นั้นถูกข้ามไป ไม่ใช่ error (ส่วนใหญ่ deployment จะอยากใช้แค่หนึ่ง
+// หรือสอง channel เท่านั้น ไม่ใช่ทั้งหมด)
 export interface EmailConfig {
   host: string;
   port: number;

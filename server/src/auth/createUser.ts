@@ -1,15 +1,14 @@
-// Bootstrap/recovery account creation — run via
-// `npm run user:create -- <username> <password> [role] [orgSubdomain]`.
-// Normal account creation goes through POST /api/users (admin-only, see
-// routes.ts); this CLI path exists for the very first account of an org,
-// and as a recovery route if every admin account somehow gets locked out —
-// matching the rest of this project's "nothing exists unless an operator
-// explicitly configured it" philosophy.
+// สร้างบัญชีสำหรับ bootstrap/กู้คืนระบบ — เรียกผ่าน
+// `npm run user:create -- <username> <password> [role] [orgSubdomain]`
+// การสร้างบัญชีปกติจะผ่าน POST /api/users (เฉพาะ admin เท่านั้น ดู
+// routes.ts); path แบบ CLI นี้มีไว้สำหรับบัญชีแรกสุดของ org และเป็นทาง
+// กู้คืนกรณีบัญชี admin ทุกบัญชีถูกล็อกไม่ให้เข้าใช้งานได้โดยบังเอิญ — เข้ากับ
+// ปรัชญา "ไม่มีอะไรเกิดขึ้นเองถ้าผู้ควบคุมไม่ได้ตั้งค่าไว้ชัดเจน" ของโปรเจกต์นี้
 //
-// orgSubdomain defaults to "legacy" (the original single-tenant fleet, see
-// migrations/0001_organizations.sql) so existing usage
-// (`npm run user:create -- name pass role`) keeps working unchanged for
-// that org without callers needing to learn a new required argument.
+// orgSubdomain มีค่า default เป็น "legacy" (fleet แบบ single-tenant ดั้งเดิม
+// ดู migrations/0001_organizations.sql) เพื่อให้การใช้งานเดิม
+// (`npm run user:create -- name pass role`) ยังทำงานได้ตามปกติสำหรับ org
+// นั้นโดยไม่ต้องให้ผู้เรียกมาเรียนรู้ argument บังคับตัวใหม่
 import "dotenv/config";
 import { initPool } from "../db/pool.js";
 import { hashPassword } from "./passwords.js";
@@ -27,9 +26,9 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  // Defaults to admin: this is the bootstrap/recovery path, and defaulting
-  // a newly created account to anything less would risk a silent lockout
-  // (no self-registration exists to recover from picking too low a role).
+  // ค่า default เป็น admin: เพราะนี่คือ path สำหรับ bootstrap/กู้คืนระบบ
+  // ถ้าตั้ง default บัญชีที่สร้างใหม่ให้ต่ำกว่านี้ จะเสี่ยงถูกล็อกออกแบบเงียบ ๆ
+  // (ระบบไม่มี self-registration ให้กู้คืนได้ถ้าเลือก role ต่ำเกินไป)
   const role: Role = roleArg ? (isRole(roleArg) ? roleArg : (() => { throw new Error(`invalid role "${roleArg}" — must be admin, it_support, or viewer`); })()) : "admin";
   const orgSubdomain = orgSubdomainArg?.trim().toLowerCase() || "legacy";
 
@@ -54,11 +53,11 @@ async function main(): Promise<void> {
   const orgId = orgRows[0]!.id;
 
   const passwordHash = await hashPassword(password);
-  // Deliberately does not touch `role` on conflict — re-running this against
-  // an existing username (e.g. to reset a forgotten password) must not
-  // silently change that account's role out from under it. Conflict target
-  // is (org_id, username), not username alone — the same username existing
-  // in a different org is a different account, not a conflict.
+  // ตั้งใจไม่แตะ `role` ตอนเกิด conflict — ถ้ารันคำสั่งนี้ซ้ำกับ username ที่มี
+  // อยู่แล้ว (เช่น เพื่อรีเซ็ตรหัสผ่านที่ลืม) ต้องไม่เปลี่ยน role ของบัญชีนั้น
+  // ไปแบบเงียบ ๆ conflict target คือ (org_id, username) ไม่ใช่ username
+  // เพียงอย่างเดียว — username เดียวกันที่อยู่คนละ org ถือเป็นคนละบัญชี ไม่ใช่
+  // การ conflict
   await pool.query(
     `INSERT INTO users (org_id, username, password_hash, role) VALUES ($1, $2, $3, $4)
      ON CONFLICT (org_id, username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,

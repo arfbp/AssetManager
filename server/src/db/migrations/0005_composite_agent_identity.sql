@@ -1,14 +1,14 @@
--- Multi-tenant migration, phase 4: agent_id (the machine's OS hostname) is
--- not unique across organizations — make (org_id, agent_id) the agents
--- table's real primary key, and update the one real FK that pointed at the
--- old bare agent_id key. command_history/assets/device_incidents/
--- asset_connection_history already carry org_id from migration 0002 and
--- were deliberately never FK'd to agents(agent_id) (an asset can predate
--- its agent, a peripheral can outlive the computer it was plugged into —
--- see schema.sql's own comments on those tables), so that reasoning is
--- unaffected by this change; only the two real constraints below move.
--- The FK must go first — it depends on agents_pkey's index, so Postgres
--- refuses to drop the PK while it's still referenced.
+-- Multi-tenant migration เฟส 4: agent_id (hostname ของ OS บนเครื่อง) ไม่
+-- unique ข้าม organization — ทำให้ (org_id, agent_id) เป็น primary key จริง
+-- ของตาราง agents และอัปเดต FK จริงตัวเดียวที่เคยชี้ไปที่ agent_id เดี่ยวๆ
+-- แบบเดิม command_history/assets/device_incidents/asset_connection_history
+-- มี org_id ติดมาจาก migration 0002 อยู่แล้ว และตั้งใจไม่ทำ FK ไปยัง
+-- agents(agent_id) มาตั้งแต่แรก (asset อาจมีอยู่ก่อน agent ของมัน อุปกรณ์
+-- peripheral อาจอยู่ได้นานกว่าคอมพิวเตอร์ที่มันเคยเสียบอยู่ — ดู comment ของ
+-- schema.sql เองบนตารางเหล่านั้น) ดังนั้นเหตุผลนั้นไม่กระทบจากการเปลี่ยนแปลง
+-- นี้ มีแค่สอง constraint จริงด้านล่างที่ต้องย้าย
+-- ต้องทำ FK ก่อน — เพราะมันขึ้นกับ index ของ agents_pkey Postgres จะไม่ยอมให้
+-- drop PK ตราบใดที่ยังถูกอ้างอิงอยู่
 ALTER TABLE telemetry_snapshots DROP CONSTRAINT telemetry_snapshots_agent_id_fkey;
 
 ALTER TABLE agents DROP CONSTRAINT agents_pkey;

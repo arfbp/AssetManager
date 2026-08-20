@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { LanguageSwitcher } from "@/components/language/LanguageSwitcher";
 import { Button } from "@/components/ui/Button";
 import { logout, getStoredRole, getStoredIsPlatformAdmin } from "@/lib/session";
+import { getOrgBranding, resolveLogoUrl } from "@/lib/branding";
 import { SHELL_STRINGS, getStoredLocale, type Locale } from "@/lib/i18n";
 
-type NavSection = "fleet" | "deploy" | "administration" | "platform";
+type NavSection = "fleet" | "erp" | "accounting" | "deploy" | "administration" | "platform";
 
 interface NavItem {
   href: string;
@@ -17,41 +18,61 @@ interface NavItem {
   icon: string;
   section: NavSection;
   adminOnly?: boolean;
-  // Distinct from adminOnly: it_support can still see this, only viewer
-  // (read-only everywhere) can't — matches how the Downloads page's
-  // installer carries the real agent auth token/HMAC secret, the same
-  // sensitivity tier as dispatching commands or editing assets, not
-  // user-management-level (admin-only).
+  // ต่างจาก adminOnly: it_support ยังเห็นเมนูนี้ได้ มีแค่ viewer (สิทธิ์
+  // อ่านอย่างเดียวทั้งระบบ) เท่านั้นที่เห็นไม่ได้ — สอดคล้องกับที่ตัว
+  // ติดตั้งของหน้า Downloads พก auth token/HMAC secret จริงของ agent ซึ่ง
+  // ความอ่อนไหวอยู่ระดับเดียวกับการยิงคำสั่งหรือแก้ไข asset ไม่ใช่ระดับ
+  // จัดการผู้ใช้ (admin เท่านั้น)
   hideForViewer?: boolean;
-  // Stricter than adminOnly: only the platform owner's own admins (see
-  // server/src/orgs/orgsStore.ts's PLATFORM_ORG_ID) — a customer org's own
-  // admin is role "admin" too but must never see or reach org-management.
+  // เข้มกว่า adminOnly: เห็นได้เฉพาะ admin ของเจ้าของแพลตฟอร์มเองเท่านั้น
+  // (ดู PLATFORM_ORG_ID ใน server/src/orgs/orgsStore.ts) — admin ของ org
+  // ลูกค้าเองก็มี role "admin" เหมือนกัน แต่ต้องไม่มีวันเห็นหรือเข้าถึง
+  // การจัดการ org ได้
   platformAdminOnly?: boolean;
 }
 
-// Grouped into labeled sidebar sections (see navLinks below) instead of one
-// flat list — the four sections roughly track who the items are for: every
-// signed-in user (Fleet), anyone who can push software (Deploy & Maintain),
-// this org's own admin (Administration), and the platform owner only
-// (Platform). Order within NAV_ITEMS only matters within a section; section
-// order/labels are defined once in SECTION_ORDER below.
+// จัดกลุ่มเป็นหมวดที่มีป้ายกำกับใน sidebar (ดู navLinks ด้านล่าง) แทนที่
+// จะเป็นรายการเดียวยาวๆ — สี่หมวดนี้แบ่งตามคร่าวๆ ว่าใครใช้: ผู้ใช้ที่
+// ล็อกอินทุกคน (Fleet), ใครก็ตามที่ push software ได้ (Deploy & Maintain),
+// admin ของ org นี้เอง (Administration) และเจ้าของแพลตฟอร์มเท่านั้น
+// (Platform) ลำดับใน NAV_ITEMS มีผลแค่ภายในหมวดเดียวกัน ส่วนลำดับ/ชื่อ
+// หมวดกำหนดไว้ที่เดียวใน SECTION_ORDER ด้านล่าง
 const NAV_ITEMS: NavItem[] = [
   { href: "/", labelKey: "dashboard", icon: "dashboard", section: "fleet" },
   { href: "/devices", labelKey: "devices", icon: "computer", section: "fleet" },
   { href: "/console", labelKey: "aiConsole", icon: "auto_awesome", section: "fleet" },
   { href: "/tracking", labelKey: "liveTracking", icon: "location_on", section: "fleet" },
   { href: "/assets", labelKey: "assetRegistry", icon: "inventory_2", section: "fleet" },
+  { href: "/employees", labelKey: "employees", icon: "badge", section: "erp" },
+  { href: "/vendors", labelKey: "vendors", icon: "local_shipping", section: "erp" },
+  { href: "/purchase-orders", labelKey: "purchaseOrders", icon: "receipt_long", section: "erp" },
+  { href: "/asset-models", labelKey: "assetModels", icon: "category", section: "erp" },
+  { href: "/maintenance", labelKey: "maintenance", icon: "build", section: "erp" },
+  { href: "/handovers", labelKey: "handovers", icon: "assignment_turned_in", section: "erp" },
+  { href: "/asset-requests", labelKey: "assetRequests", icon: "fact_check", section: "erp" },
+  { href: "/licenses", labelKey: "licenses", icon: "key", section: "erp" },
+  { href: "/asset-transfers", labelKey: "assetTransfers", icon: "sync_alt", section: "erp" },
+  { href: "/asset-counts", labelKey: "assetCounts", icon: "checklist", section: "erp" },
+  { href: "/asset-adjustments", labelKey: "assetAdjustments", icon: "tune", section: "erp" },
+  { href: "/asset-retirements", labelKey: "assetRetirements", icon: "archive", section: "erp" },
+  { href: "/gl-accounts", labelKey: "glAccounts", icon: "account_balance", section: "accounting", adminOnly: true },
+  { href: "/journal-entries", labelKey: "journalEntries", icon: "menu_book", section: "accounting", adminOnly: true },
+  { href: "/fiscal-periods", labelKey: "fiscalPeriods", icon: "event_repeat", section: "accounting", adminOnly: true },
+  { href: "/depreciation-runs", labelKey: "depreciationRuns", icon: "calculate", section: "accounting", adminOnly: true },
   { href: "/downloads", labelKey: "downloads", icon: "download", section: "deploy", hideForViewer: true },
   { href: "/software-deploy", labelKey: "softwareDeploy", icon: "install_desktop", section: "deploy", adminOnly: true },
   { href: "/agent-updates", labelKey: "agentUpdates", icon: "system_update", section: "deploy", adminOnly: true },
   { href: "/uninstall-software", labelKey: "uninstallSoftware", icon: "delete_sweep", section: "deploy", adminOnly: true },
   { href: "/users", labelKey: "users", icon: "group", section: "administration", adminOnly: true },
+  { href: "/org-settings", labelKey: "orgSettings", icon: "palette", section: "administration", adminOnly: true },
   { href: "/organizations", labelKey: "organizations", icon: "corporate_fare", section: "platform", platformAdminOnly: true },
   { href: "/audit-log", labelKey: "auditLog", icon: "history", section: "platform", platformAdminOnly: true },
 ];
 
 const SECTION_ORDER: { key: NavSection; labelKey: keyof (typeof SHELL_STRINGS)["en"] }[] = [
   { key: "fleet", labelKey: "navSectionFleet" },
+  { key: "erp", labelKey: "navSectionErp" },
+  { key: "accounting", labelKey: "navSectionAccounting" },
   { key: "deploy", labelKey: "navSectionDeploy" },
   { key: "administration", labelKey: "navSectionAdministration" },
   { key: "platform", labelKey: "navSectionPlatform" },
@@ -62,16 +83,16 @@ function initials(name: string): string {
 }
 
 /**
- * Persistent admin-panel frame shared by every authenticated page — a
- * left sidebar (deliberately always dark, see globals.css) for primary
- * navigation, and a top bar carrying identity/session controls plus
- * whatever page-specific status the caller passes in (e.g. the dashboard's
- * live-connection badge). Page bodies render into `children` only; they no
- * longer own their own header markup.
+ * โครง admin panel ถาวรที่ใช้ร่วมกันทุกหน้าที่ล็อกอินแล้ว — sidebar ด้าน
+ * ซ้าย (ตั้งใจให้เป็นธีมมืดตายตัว ดู globals.css) สำหรับ navigation หลัก
+ * และ top bar ที่มีตัวควบคุมข้อมูลผู้ใช้/session รวมถึงสถานะเฉพาะหน้าที่
+ * ฝั่งเรียกใช้ส่งเข้ามา (เช่น badge สถานะการเชื่อมต่อ live ของ dashboard)
+ * เนื้อหาของแต่ละหน้า render ผ่าน `children` เท่านั้น ไม่มี header เป็น
+ * ของตัวเองอีกต่อไป
  *
- * Visual language (glass cards, this navy/blue palette, Material Symbols
- * icons) matches a reference mockup the user asked to clone — see
- * globals.css's token comment.
+ * ภาษาภาพ (glass card, โทนสีกรมท่า/น้ำเงินนี้, ไอคอน Material Symbols)
+ * อ้างอิงตาม mockup ที่ผู้ใช้ต้องการให้ทำตาม — ดู comment เรื่อง token ใน
+ * globals.css
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -84,14 +105,14 @@ export function AppShell({
 }: {
   username: string;
   statusSlot?: React.ReactNode;
-  /** Real count only — omit rather than fabricate a badge with nothing behind it. Only the Dashboard currently computes this. */
+  /** ใช้เฉพาะจำนวนจริงเท่านั้น — ไม่ส่งมาดีกว่าใส่ badge ที่ไม่มีข้อมูลจริงรองรับ ตอนนี้มีแค่ Dashboard ที่คำนวณค่านี้ */
   notificationCount?: number;
-  /** When "closed", shows a real banner explaining the likely cause instead
-   * of letting every page quietly render "0 devices" / empty states that
-   * look identical to a genuinely empty fleet. The single most common cause
-   * on a self-signed-cert deployment: the browser has never been to the
-   * API's own HTTPS origin, so it silently blocks every fetch/WebSocket to
-   * it — see the banner text below for the actual fix. */
+  /** เมื่อเป็น "closed" จะแสดง banner อธิบายสาเหตุที่เป็นไปได้ แทนที่จะ
+   * ปล่อยให้ทุกหน้าขึ้น "0 devices" หรือ empty state เงียบๆ ที่หน้าตา
+   * เหมือนฟลีตว่างเปล่าจริงๆ ทุกประการ สาเหตุที่พบบ่อยที่สุดบน deployment
+   * ที่ใช้ self-signed cert คือ เบราว์เซอร์ยังไม่เคยเข้า origin HTTPS ของ
+   * API เลย จึงบล็อก fetch/WebSocket ไปยังมันแบบเงียบๆ — ดูข้อความใน
+   * banner ด้านล่างสำหรับวิธีแก้จริง */
   connectionStatus?: "connecting" | "open" | "closed";
   children: React.ReactNode;
 }) {
@@ -99,10 +120,10 @@ export function AppShell({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  // AppShell only ever mounts after AuthGate reaches "authenticated" (a
-  // purely client-side transition — see AuthGate.tsx), so this never runs
-  // during a server render and can't produce a hydration mismatch — same
-  // reasoning applies to reading the stored locale below.
+  // AppShell จะ mount ก็ต่อเมื่อ AuthGate เข้าสถานะ "authenticated" แล้ว
+  // เท่านั้น (เป็นการเปลี่ยนสถานะฝั่ง client ล้วนๆ ดู AuthGate.tsx) จึงไม่มี
+  // ทางรันตอน server render และไม่เกิด hydration mismatch — เหตุผล
+  // เดียวกันนี้ใช้กับการอ่าน locale ที่เก็บไว้ด้านล่างด้วย
   const role = getStoredRole();
   const isPlatformAdmin = getStoredIsPlatformAdmin();
   const visibleNavItems = NAV_ITEMS.filter(
@@ -113,6 +134,17 @@ export function AppShell({
   );
   const [locale, setLocale] = useState<Locale>(() => getStoredLocale());
   const t = SHELL_STRINGS[locale];
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOrgBranding().then((branding) => {
+      if (!cancelled && branding?.logoUrl) setLogoUrl(resolveLogoUrl(branding.logoUrl));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleSearch(e: FormEvent): void {
     e.preventDefault();
@@ -120,14 +152,13 @@ export function AppShell({
     router.push(q ? `/devices?q=${encodeURIComponent(q)}` : "/devices");
   }
 
-  // Shared between the always-visible desktop sidebar and the mobile
-  // slide-in drawer — one nav item list feeding two layouts, so a page
-  // added to NAV_ITEMS never needs updating in two places, and the two
-  // surfaces can't drift out of sync on which links exist. Grouped by
-  // section (SECTION_ORDER) with a label above each non-empty group — a
-  // section a given role can't see anything in (e.g. Platform for a
-  // non-platform-admin) is skipped entirely, not shown with a label and no
-  // links under it.
+  // ใช้ร่วมกันทั้ง sidebar เดสก์ท็อปที่แสดงตลอด และ drawer แบบเลื่อนเข้า
+  // บนมือถือ — nav item ชุดเดียวป้อนให้สอง layout เพื่อไม่ต้องแก้สองที่
+  // เวลาเพิ่มหน้าใหม่ใน NAV_ITEMS และสองฝั่งจะไม่มีวันไม่ตรงกันเรื่องลิงก์
+  // ที่มี จัดกลุ่มตาม section (SECTION_ORDER) มีป้ายกำกับเหนือแต่ละกลุ่มที่
+  // ไม่ว่าง — หมวดที่ role นั้นมองไม่เห็นอะไรเลย (เช่น Platform สำหรับคนที่
+  // ไม่ใช่ platform admin) จะถูกข้ามไปทั้งหมด ไม่แสดงป้ายกำกับเปล่าๆ ไม่มี
+  // ลิงก์ข้างใต้
   function navLinks(onNavigate?: () => void): React.ReactNode {
     return SECTION_ORDER.map(({ key, labelKey }) => {
       const items = visibleNavItems.filter((item) => item.section === key);
@@ -165,7 +196,7 @@ export function AppShell({
     return (
       <div className="flex items-center gap-3 px-5 py-5">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-accent text-white">
-          <img src="/optifleet-mark.svg" alt="" className="h-5 w-5" />
+          <img src={logoUrl ?? "/optifleet-mark.svg"} alt="" className="h-5 w-5" />
         </div>
         <div className="leading-none">
           <h1 className="font-display text-sm font-bold text-sidebar-ink-active">OptiFleet AI</h1>
@@ -199,12 +230,12 @@ export function AppShell({
         {identityBlock()}
       </aside>
 
-      {/* Mobile nav: a real slide-in drawer, not a horizontal link row —
-          the earlier "sm:hidden" inline row of every nav label overflowed
-          off the right edge of the viewport with no way to scroll to it
-          once enough pages existed to outgrow one line (verified on a real
-          390px-wide viewport: Software Deploy/Agent Updates/Uninstall
-          Software/Users all landed past the visible edge, unreachable). */}
+      {/* nav บนมือถือ: เป็น drawer เลื่อนเข้าจริงๆ ไม่ใช่แถวลิงก์แนวนอน —
+          ของเดิมที่เป็นแถว "sm:hidden" เรียงป้ายชื่อ nav ทุกอันแนวนอนล้น
+          ออกขอบขวาจอโดยไม่มีทางเลื่อนไปดูได้ เมื่อจำนวนหน้าเยอะเกินหนึ่ง
+          บรรทัด (ทดสอบจริงบนหน้าจอกว้าง 390px แล้วพบว่า Software
+          Deploy/Agent Updates/Uninstall Software/Users ตกขอบไปหมด กดไม่ถึง
+          เลย) */}
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 sm:hidden">
           <button type="button" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} className="absolute inset-0 bg-black/40" />

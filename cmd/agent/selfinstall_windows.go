@@ -1,28 +1,27 @@
 //go:build windows
 
-// Self-install path for the single-file Windows distribution: a plain
-// double-click (or running the exe with zero flags from a shell) copies
-// itself into a per-user data folder, registers itself to auto-start at the
-// next login, and immediately starts running and sending telemetry in the
-// current process — no UAC prompt, no Windows Service, no admin rights
-// needed anywhere in this path.
+// Path การ self-install สำหรับ single-file distribution บน Windows: แค่
+// ดับเบิลคลิกเฉย ๆ (หรือรัน exe แบบไม่มี flag จาก shell) จะ copy ตัวเองลง
+// โฟลเดอร์ข้อมูลของ user นั้น ลงทะเบียนให้ auto-start ตอน login ครั้งถัดไป
+// และเริ่มทำงานพร้อมส่ง telemetry ทันทีใน process ปัจจุบัน — ไม่มี UAC
+// prompt ไม่มี Windows Service ไม่ต้องใช้สิทธิ์ admin เลยตลอด path นี้
 //
-// This deliberately does NOT install a Windows Service (an earlier version
-// of this file did, via self-elevation). That combination — an unsigned
-// binary that elevates itself and installs a system service — is exactly
-// the behavior pattern antivirus heuristics flag as a dropper/trojan, and
-// on real target machines it got silently deleted moments after running,
-// with zero visible error. Running directly as a normal user-level process
-// and auto-starting via the per-user Run registry key avoids every part of
-// that pattern. The tradeoff: it only runs while that user is logged in
-// (restarting automatically at each login), not before login or across
-// other users' sessions the way a real service would — see server/README.md
-// if that tradeoff ever needs revisiting alongside proper code signing.
+// ตั้งใจไม่ install เป็น Windows Service (โค้ดเวอร์ชันก่อนหน้าทำแบบนั้น
+// ผ่านการ self-elevate) เพราะการรวมกันแบบนั้น — ไบนารีที่ไม่ได้ sign ที่
+// elevate ตัวเองแล้ว install system service — เป็น pattern พฤติกรรมที่
+// antivirus heuristics มักจะ flag ว่าเป็น dropper/trojan พอดี และบนเครื่อง
+// จริงมันถูกลบทิ้งเงียบ ๆ ไม่กี่วินาทีหลังรัน โดยไม่มี error ให้เห็นเลย การ
+// รันตรง ๆ แบบ process ระดับ user ธรรมดา แล้ว auto-start ผ่าน per-user Run
+// registry key จะเลี่ยง pattern นั้นได้ทั้งหมด ข้อแลกเปลี่ยนคือ: มันจะรัน
+// เฉพาะตอนที่ user คนนั้น login อยู่เท่านั้น (restart อัตโนมัติทุกครั้งที่
+// login) ไม่ได้รันก่อน login หรือข้าม session ของ user คนอื่นเหมือน service
+// จริง ๆ — ดู server/README.md ถ้าวันไหนต้องมาทบทวน tradeoff นี้อีกครั้ง
+// พร้อมกับเรื่อง code signing ที่ถูกต้อง
 //
-// Ordinary invocations are unaffected: the Service Control Manager starting
-// an installed service (from the separate -service install path, still
-// supported for anyone who explicitly wants real service semantics), or an
-// explicit -service/-run flag, both skip this path — see shouldSelfInstall.
+// การเรียกใช้ปกติไม่ได้รับผลกระทบ: ทั้ง Service Control Manager ที่สั่ง
+// service ที่ติดตั้งไว้ (จาก path -service install แยกต่างหาก ที่ยังรองรับ
+// อยู่สำหรับใครที่อยากได้ semantics ของ service จริง ๆ) หรือการใส่ flag
+// -service/-run ตรง ๆ ทั้งคู่จะข้าม path นี้ไป — ดู shouldSelfInstall
 package main
 
 import (
@@ -39,17 +38,17 @@ import (
 	"optifleet-agent/internal/logger"
 )
 
-// runKeyName is the value name under HKCU's Run key — shows up by this name
-// in Task Manager's Startup tab / msconfig, same as any other ordinary
-// auto-starting app; nothing here hides it.
+// runKeyName คือชื่อ value ภายใต้ Run key ของ HKCU — จะขึ้นชื่อนี้ใน
+// Startup tab ของ Task Manager / msconfig เหมือน app auto-start ทั่วไป
+// ไม่มีการซ่อนอะไรตรงนี้เลย
 const runKeyName = "OptiFleetAgent"
 
 func shouldSelfInstall(svcFlag string, runForeground bool) bool {
 	return kservice.Interactive() && svcFlag == "" && !runForeground
 }
 
-// alreadyElevated is unused now (kept so main.go's call site doesn't need a
-// platform-specific signature) — this path never elevates.
+// alreadyElevated ตอนนี้ไม่ได้ใช้แล้ว (เก็บไว้เพื่อให้ call site ใน main.go
+// ไม่ต้องมี signature เฉพาะแพลตฟอร์ม) — path นี้ไม่มีการ elevate เลย
 func selfInstall(alreadyElevated bool) {
 	installDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "OptiFleetAgent")
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
@@ -81,11 +80,11 @@ func selfInstall(alreadyElevated bool) {
 		os.Exit(1)
 	}
 
-	// The embedded config carries "__INSTALL_DIR__" placeholders (there's no
-	// single fixed path to bake in at build time the way the Program
-	// Files-based service install could) — backslashes doubled because
-	// they're landing inside a YAML double-quoted scalar, same escaping the
-	// original hardcoded paths used.
+	// config ที่ฝังไว้มี placeholder "__INSTALL_DIR__" อยู่ (ไม่มี path
+	// ตายตัวเดียวให้ bake ตอน build ได้เหมือนตอน install แบบ service ที่ใช้
+	// Program Files) — ต้อง double backslash เพราะมันไปอยู่ใน YAML
+	// double-quoted scalar เป็นการ escape แบบเดียวกับที่ path hardcode เดิม
+	// เคยใช้
 	yamlEscapedDir := strings.ReplaceAll(installDir, `\`, `\\`)
 	yamlContent := strings.ReplaceAll(string(embeddedAgentYAML), "__INSTALL_DIR__", yamlEscapedDir)
 	configPath := filepath.Join(installDir, "agent.yaml")
@@ -98,10 +97,9 @@ func selfInstall(alreadyElevated bool) {
 	os.Setenv("OPTIFLEET_HMAC_SECRET", embeddedHMACSecret)
 
 	if err := registerAutostart(exeDst, configPath); err != nil {
-		// Not fatal: the agent still runs right now for this session even
-		// if it won't survive the next login. Surfacing this only via the
-		// log file (below) rather than exiting, since running now is still
-		// strictly better than not running at all.
+		// ไม่ fatal: agent ยังรันได้ปกติใน session นี้ แม้จะไม่รอดถึง login
+		// ครั้งถัดไป แค่ log ไว้ (ด้านล่าง) ไม่ต้อง exit เพราะรันตอนนี้ก็ยังดี
+		// กว่าไม่รันเลย
 		fmt.Fprintln(os.Stderr, "self-install: could not register autostart (will still run this session):", err)
 	}
 
@@ -120,9 +118,9 @@ func selfInstall(alreadyElevated bool) {
 	runAgent(context.Background(), cfg, loggers, configPath)
 }
 
-// registerAutostart adds a per-user Run key entry — no admin rights
-// required, unlike a Windows Service — so this resumes automatically the
-// next time this user logs in.
+// registerAutostart เพิ่ม entry ใน per-user Run key — ไม่ต้องใช้สิทธิ์
+// admin ต่างจาก Windows Service — ทำให้ทำงานต่อได้อัตโนมัติเมื่อ user คนนี้
+// login ครั้งถัดไป
 func registerAutostart(exePath, configPath string) error {
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
 	if err != nil {

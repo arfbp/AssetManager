@@ -2,11 +2,11 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-// Replaces the same "rounded-md border border-border px-3 py-1.5 text-sm
-// ..." utility string repeated across most pages — one place to keep the
-// tone/variant vocabulary consistent instead of re-deriving it per button.
-// Deliberately small: variant/tone cover what's actually used today, not a
-// speculative full design-system API.
+// แทนที่ string class "rounded-md border border-border px-3 py-1.5 text-sm
+// ..." ที่ซ้ำกันอยู่ในเกือบทุกหน้า — รวมไว้ที่เดียวเพื่อให้คำศัพท์เรื่อง
+// tone/variant สอดคล้องกัน ไม่ต้องคิดใหม่ทุกครั้งที่ทำปุ่ม ตั้งใจให้เล็ก
+// ไว้: variant/tone ครอบคลุมแค่ที่ใช้จริงตอนนี้ ไม่ได้ทำเป็น API ของ
+// design system เต็มรูปแบบล่วงหน้า
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

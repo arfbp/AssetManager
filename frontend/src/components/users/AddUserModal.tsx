@@ -25,11 +25,11 @@ function isRole(value: string | undefined): value is Role {
 interface AddUserModalProps {
   onClose: () => void;
   onCreated: () => void;
-  // Best-effort values extracted by the AI console (see
-  // server/src/security/adminGuardrail.ts's "admin_form" verdict) — the
-  // operator still reviews, sets a password, and can edit every field
-  // before submitting; nothing is created until they do. Empty/undefined
-  // when opened from the Users page's own "Add user" button.
+  // ค่าที่ดึงมาแบบเดาที่ดีที่สุดจาก AI console (ดูผลตัดสิน "admin_form"
+  // ใน server/src/security/adminGuardrail.ts) — ผู้ใช้ยังต้องตรวจสอบ ตั้ง
+  // รหัสผ่านเอง และแก้ไขได้ทุก field ก่อนกดส่ง ไม่มีอะไรถูกสร้างจนกว่าจะ
+  // กดยืนยัน เป็น empty/undefined เมื่อเปิดจากปุ่ม "Add user" ของหน้า
+  // Users เอง
   prefill?: AddUserPrefill;
 }
 

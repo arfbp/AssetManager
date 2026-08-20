@@ -1,15 +1,14 @@
-// Two layers, run in order by `npm run db:migrate`:
-//   1. schema.sql — the original idempotent baseline (IF NOT EXISTS
-//      everywhere), still applied unconditionally every run since it's a
-//      no-op once already applied. Kept as-is rather than folded into a
-//      migration file so existing deploy muscle memory ("just run
-//      db:migrate") keeps working unchanged.
-//   2. migrations/*.sql — real ordered, one-time, non-idempotent steps
-//      (backfills, constraint changes) that schema.sql's IF-NOT-EXISTS
-//      convention can't safely express. Each file is tracked in
-//      schema_migrations and only ever applied once, inside its own
-//      transaction (rolled back and the whole run aborted on any failure,
-//      so a half-applied migration never gets marked done).
+// สองชั้น รันตามลำดับโดย `npm run db:migrate`:
+//   1. schema.sql — baseline แบบ idempotent เดิม (มี IF NOT EXISTS ทุกที่)
+//      ยังถูก apply แบบไม่มีเงื่อนไขทุกครั้งที่รัน เพราะเป็น no-op ถ้า apply
+//      ไปแล้ว เก็บไว้แบบเดิมแทนที่จะยุบรวมเข้าไปเป็นไฟล์ migration เพื่อให้
+//      ความเคยชินในการ deploy ("แค่รัน db:migrate") ยังใช้ได้เหมือนเดิม
+//   2. migrations/*.sql — ขั้นตอนแบบเรียงลำดับจริง ทำครั้งเดียว ไม่ idempotent
+//      (backfill, การเปลี่ยน constraint) ที่ convention IF-NOT-EXISTS ของ
+//      schema.sql แสดงออกมาแบบปลอดภัยไม่ได้ แต่ละไฟล์ถูก track ไว้ใน
+//      schema_migrations และ apply แค่ครั้งเดียวเท่านั้น อยู่ใน transaction
+//      ของตัวเอง (rollback และยกเลิกทั้งรันถ้าเกิด failure ใดๆ ดังนั้น
+//      migration ที่ apply ไปครึ่งเดียวจะไม่มีวันถูก mark ว่าเสร็จแล้ว)
 import "dotenv/config";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -36,7 +35,7 @@ async function applyMigrations(pool: pg.Pool): Promise<void> {
   const dir = join(__dirname, "migrations");
   const files = readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
-    .sort(); // filenames are zero-padded ("0001_...") so lexical sort is chronological
+    .sort(); // ชื่อไฟล์เติม 0 นำหน้า ("0001_...") ดังนั้น sort แบบ lexical จึงเรียงตามเวลาได้พอดี
 
   const { rows: applied } = await pool.query<{ version: string }>("SELECT version FROM schema_migrations");
   const appliedVersions = new Set(applied.map((r) => r.version));

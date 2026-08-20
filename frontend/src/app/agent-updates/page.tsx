@@ -41,7 +41,7 @@ function AgentUpdates({ username }: { username: string }) {
 
   useEffect(() => {
     reload();
-    const timer = setInterval(reload, 10_000); // agents converge on their next heartbeat, not instantly
+    const timer = setInterval(reload, 10_000); // agent จะ sync กับ build ล่าสุดตอน heartbeat รอบถัดไป ไม่ใช่ทันที
     return () => clearInterval(timer);
   }, [reload]);
 

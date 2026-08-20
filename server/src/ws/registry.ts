@@ -1,21 +1,21 @@
-// In-memory registry of agents. A single-process registry is the right
-// starting point for one server instance; scaling to multiple server
-// processes needs a shared registry (e.g. Redis) behind this same interface
-// — see server/README.md's "Scaling beyond one instance" note.
+// Registry ของ agent ในหน่วยความจำ registry แบบ single-process คือจุดเริ่มต้น
+// ที่เหมาะสมสำหรับเซิร์ฟเวอร์อินสแตนซ์เดียว การ scale ไปหลาย process ของ
+// เซิร์ฟเวอร์ต้องมี registry ที่ใช้ร่วมกัน (เช่น Redis) อยู่หลัง interface
+// เดียวกันนี้ — ดูหัวข้อ "Scaling beyond one instance" ใน server/README.md
 //
-// Agents are never fully deleted on disconnect — they flip to status
-// "offline" and keep their last-known telemetry. That's what lets the
-// dashboard show a device that's currently unreachable instead of it just
-// vanishing from the list, which matters for an ops/monitoring surface more
-// than raw memory thrift (a fleet has a bounded, known device count).
+// Agent ไม่เคยถูกลบออกทั้งหมดตอน disconnect — จะเปลี่ยนสถานะเป็น "offline"
+// และเก็บ telemetry ล่าสุดที่รู้ไว้ นั่นคือสิ่งที่ทำให้ dashboard แสดงอุปกรณ์
+// ที่ตอนนี้เข้าถึงไม่ได้แทนที่จะหายไปจาก list เฉยๆ ซึ่งสำคัญสำหรับหน้าจอ
+// ops/monitoring มากกว่าการประหยัดหน่วยความจำเปล่าๆ (fleet มีจำนวนอุปกรณ์ที่
+// จำกัดและรู้ล่วงหน้า)
 //
-// Every lookup/mutation here takes an orgId alongside agentId — agentId
-// alone is just the machine's OS hostname (see cmd/agent/main.go's
-// os.Hostname()), which is not unique across customer organizations
-// ("DESKTOP-001" is a common auto-generated Windows hostname). The internal
-// Map key is the composite of the two (mapKey below) so two different orgs'
-// agents that happen to share a hostname coexist safely instead of one
-// silently overwriting the other's connection state.
+// ทุกการ lookup/mutation ที่นี่ใช้ orgId คู่กับ agentId เสมอ — agentId
+// อย่างเดียวคือแค่ OS hostname ของเครื่อง (ดู os.Hostname() ใน
+// cmd/agent/main.go) ซึ่งไม่ unique ข้าม organization ของลูกค้า
+// ("DESKTOP-001" เป็น hostname ที่ Windows auto-generate บ่อยมาก) Map key
+// ภายในคือ composite ของทั้งสองตัว (mapKey ด้านล่าง) เพื่อให้ agent ของสอง
+// org ที่บังเอิญมี hostname ซ้ำกันอยู่ร่วมกันได้อย่างปลอดภัย แทนที่ตัวหนึ่งจะ
+// เขียนทับ connection state ของอีกตัวแบบเงียบๆ
 import { EventEmitter } from "node:events";
 import type { WebSocket } from "ws";
 import { log } from "../logger.js";
@@ -30,37 +30,34 @@ export interface AgentSummary {
   connectedAt: number;
   lastSeenAt: number;
   lastTelemetry: TelemetrySnapshot | null;
-  /** The IP the current (or most recent) WebSocket connection came from —
-   * see ws/server.ts's connection handler. Null only for an agent this
-   * server process has never actually seen connect (e.g. restored from DB
-   * on startup before persistence.ts is wired — see registry construction). */
+  /** IP ที่ WebSocket connection ปัจจุบัน (หรือล่าสุด) มาจาก — ดู connection
+   * handler ใน ws/server.ts เป็น null เฉพาะ agent ที่ server process นี้ไม่เคย
+   * เห็นการ connect จริงๆ (เช่น restore มาจาก DB ตอน startup ก่อนที่
+   * persistence.ts จะถูก wire — ดูตอนสร้าง registry) */
   remoteIp: string | null;
-  /** From the agent's own heartbeat (internal/version.Version) — null for an
-   * agent build old enough to predate version reporting, or one that
-   * hasn't sent a heartbeat yet this connection. Compared against the
-   * server's own "latest available" build (see index.ts's
-   * agentBuilds.ts's AgentBuildRegistry.getActive()) to decide whether to
-   * push a self_update. */
+  /** จาก heartbeat ของ agent เอง (internal/version.Version) — null สำหรับ
+   * agent build ที่เก่าจนมาก่อนมี version reporting หรือตัวที่ยังไม่ได้ส่ง
+   * heartbeat เลยใน connection นี้ เทียบกับ "build ล่าสุดที่มี" ของเซิร์ฟเวอร์
+   * เอง (ดู AgentBuildRegistry.getActive() ใน index.ts's agentBuilds.ts)
+   * เพื่อตัดสินใจว่าจะ push self_update หรือไม่ */
   version: string | null;
-  /** From the agent's own heartbeat (SHA256 of its live agent.yaml — see
-   * internal/configpush) — null for an agent build old enough to predate
-   * config-hash reporting, or one that hasn't sent a heartbeat yet this
-   * connection. Compared against the server's own desired config (see
-   * agentConfig.ts's loadDesiredAgentConfig) to decide whether to push a
-   * config_update. */
+  /** จาก heartbeat ของ agent เอง (SHA256 ของ agent.yaml ที่ใช้งานอยู่ — ดู
+   * internal/configpush) — null สำหรับ agent build ที่เก่าจนมาก่อนมี
+   * config-hash reporting หรือตัวที่ยังไม่ได้ส่ง heartbeat เลยใน connection
+   * นี้ เทียบกับ config ที่เซิร์ฟเวอร์ต้องการเอง (ดู loadDesiredAgentConfig
+   * ใน agentConfig.ts) เพื่อตัดสินใจว่าจะ push config_update หรือไม่ */
   configHash: string | null;
 }
 
 interface AgentConnection extends AgentSummary {
   socket: WebSocket | null;
-  /** Set once a self_update has been pushed for the CURRENTLY-reported
-   * version on this connection, so a reconnect-free agent that's slow to
-   * apply the update (or one whose update legitimately failed) doesn't get
-   * re-sent the same instruction on every single heartbeat. Cleared
-   * whenever the agent's reported version actually changes. */
+  /** ถูก set เมื่อมีการ push self_update ให้กับ version ที่ CURRENTLY-reported
+   * ของ connection นี้แล้ว เพื่อไม่ให้ agent ที่ยังไม่ได้ reconnect และช้าใน
+   * การ apply update (หรือตัวที่ update ล้มเหลวจริงๆ) ถูกส่งคำสั่งเดิมซ้ำทุก
+   * heartbeat จะถูกล้างเมื่อ version ที่ agent รายงานเปลี่ยนไปจริงๆ */
   updateOfferedForVersion: string | null;
-  /** Same reasoning as updateOfferedForVersion, for config_update pushes —
-   * cleared whenever the agent's reported configHash actually changes. */
+  /** เหตุผลเดียวกับ updateOfferedForVersion แต่สำหรับการ push config_update —
+   * ล้างเมื่อ configHash ที่ agent รายงานเปลี่ยนไปจริงๆ */
   configUpdateOfferedForHash: string | null;
 }
 
@@ -83,10 +80,10 @@ function toSummary(c: AgentConnection): AgentSummary {
 }
 
 /**
- * Emits "update" with an {@link AgentSummary} on every state change
- * (connect, disconnect, heartbeat, telemetry) — the dashboard WebSocket
- * server (ws/dashboardServer.ts) subscribes to this to push live updates to
- * connected browser clients without polling.
+ * Emit "update" พร้อม {@link AgentSummary} ทุกครั้งที่ state เปลี่ยน (connect,
+ * disconnect, heartbeat, telemetry) — dashboard WebSocket server
+ * (ws/dashboardServer.ts) subscribe ตัวนี้เพื่อ push อัปเดตสดๆ ไปยัง browser
+ * client ที่เชื่อมต่ออยู่โดยไม่ต้อง poll
  */
 export class AgentRegistry extends EventEmitter {
   private readonly agents = new Map<string, AgentConnection>();
@@ -95,8 +92,8 @@ export class AgentRegistry extends EventEmitter {
     const key = mapKey(orgId, agentId);
     const existing = this.agents.get(key);
     if (existing?.socket && existing.socket !== socket) {
-      // A new connection from the same agent ID replaces the old one — the
-      // stale socket is closed rather than left as an orphaned zombie entry.
+      // Connection ใหม่จาก agent ID เดิมจะแทนที่ตัวเก่า — socket เก่าที่ค้าง
+      // อยู่จะถูกปิดแทนที่จะทิ้งไว้เป็น entry ซอมบี้ที่ไม่มีใครดูแล
       log.warn({ orgId, agentId }, "registry: replacing existing connection for agent");
       existing.socket.close(1000, "superseded by new connection");
     }
@@ -108,7 +105,7 @@ export class AgentRegistry extends EventEmitter {
       socket,
       connectedAt: now,
       lastSeenAt: now,
-      lastTelemetry: existing?.lastTelemetry ?? null, // carry over last-known telemetry across a reconnect
+      lastTelemetry: existing?.lastTelemetry ?? null, // ส่งต่อ telemetry ล่าสุดที่รู้ข้าม reconnect
       remoteIp: remoteIp ?? existing?.remoteIp ?? null,
       version: existing?.version ?? null,
       updateOfferedForVersion: existing?.updateOfferedForVersion ?? null,
@@ -122,9 +119,9 @@ export class AgentRegistry extends EventEmitter {
   unregister(orgId: string, agentId: string, socket: WebSocket): void {
     const key = mapKey(orgId, agentId);
     const existing = this.agents.get(key);
-    // Only flip to offline if this call is for the currently-registered
-    // socket — an old connection's close event firing after a reconnect
-    // must not mark the new connection offline.
+    // เปลี่ยนเป็น offline เฉพาะกรณีที่ call นี้เป็นของ socket ที่ลงทะเบียน
+    // อยู่ปัจจุบันเท่านั้น — close event ของ connection เก่าที่ยิงมาหลังจาก
+    // reconnect ไปแล้วต้องไม่ทำให้ connection ใหม่กลายเป็น offline
     if (existing && existing.socket === socket) {
       existing.status = "offline";
       existing.socket = null;
@@ -140,10 +137,10 @@ export class AgentRegistry extends EventEmitter {
     }
   }
 
-  /** Records the agent's self-reported version from a heartbeat — see
-   * AgentSummary.version. Resets updateOfferedForVersion whenever the
-   * reported version actually changes (a fresh version means any past
-   * "already offered" tracking no longer applies to it). */
+  /** บันทึก version ที่ agent รายงานมาเองจาก heartbeat — ดู
+   * AgentSummary.version รีเซ็ต updateOfferedForVersion ทุกครั้งที่ version
+   * ที่รายงานมาเปลี่ยนไปจริงๆ (version ใหม่แปลว่าการติดตาม "offer ไปแล้ว"
+   * ในอดีตใช้ไม่ได้กับมันอีกต่อไป) */
   recordVersion(orgId: string, agentId: string, version: string): void {
     const conn = this.agents.get(mapKey(orgId, agentId));
     if (conn && conn.version !== version) {
@@ -153,21 +150,20 @@ export class AgentRegistry extends EventEmitter {
     }
   }
 
-  /** True if this connection isn't running latestVersion and hasn't already
-   * been offered an update for its current version.
+  /** True ถ้า connection นี้ไม่ได้รัน latestVersion และยังไม่เคยถูก offer
+   * update สำหรับ version ปัจจุบันของมัน
    *
-   * Deliberately an inequality check, not "is older than" — version
-   * strings here are opaque (internal/version.Version, hand-bumped, not
-   * parsed as semver), and the fleet's convergence model is "whatever
-   * build sits in the server's downloads/ folder is authoritative,"
-   * matching every agent to it either direction. That's what makes a
-   * deliberate rollback possible: put an older build back in downloads/,
-   * restart the server, and every agent downgrades to match — a real,
-   * useful capability, not just a side effect to guard against. The real
-   * guard here is updateOfferedForVersion: it stops the same self_update
-   * from being re-sent on every heartbeat while one's already mid-flight or
-   * has failed once (which needs a human to look at logs, not a retry
-   * storm) — never a version-ordering check.
+   * ตั้งใจทำเป็นการเช็คความไม่เท่ากัน ไม่ใช่ "เก่ากว่า" — version string
+   * ในที่นี้เป็นค่า opaque (internal/version.Version, bump มือ ไม่ได้ parse
+   * แบบ semver) และโมเดล convergence ของ fleet คือ "build ไหนก็ตามที่อยู่ใน
+   * โฟลเดอร์ downloads/ ของเซิร์ฟเวอร์คือตัวที่ถูกต้อง" ให้ agent ทุกตัว match
+   * เข้าหามันไม่ว่าจะทิศทางไหน นั่นคือสิ่งที่ทำให้ rollback โดยตั้งใจทำได้:
+   * เอา build เก่ากลับไปวางใน downloads/ restart เซิร์ฟเวอร์ แล้ว agent ทุกตัว
+   * จะ downgrade ให้ตรงกัน — เป็นความสามารถที่มีประโยชน์จริง ไม่ใช่แค่ side
+   * effect ที่ต้องระวัง ตัว guard จริงๆ ตรงนี้คือ updateOfferedForVersion:
+   * มันหยุดไม่ให้ self_update ตัวเดิมถูกส่งซ้ำทุก heartbeat ในขณะที่ตัวหนึ่ง
+   * กำลัง mid-flight หรือล้มเหลวไปแล้วครั้งหนึ่ง (ซึ่งต้องให้คนมาดู log ไม่ใช่
+   * retry รัวๆ) — ไม่ใช่การเช็คลำดับ version เลย
    */
   needsUpdate(orgId: string, agentId: string, latestVersion: string): boolean {
     const conn = this.agents.get(mapKey(orgId, agentId));
@@ -180,9 +176,9 @@ export class AgentRegistry extends EventEmitter {
     if (conn) conn.updateOfferedForVersion = conn.version;
   }
 
-  /** Records the agent's self-reported config hash from a heartbeat — see
-   * AgentSummary.configHash. Resets configUpdateOfferedForHash whenever the
-   * reported hash actually changes, same reasoning as recordVersion. */
+  /** บันทึก config hash ที่ agent รายงานมาเองจาก heartbeat — ดู
+   * AgentSummary.configHash รีเซ็ต configUpdateOfferedForHash ทุกครั้งที่
+   * hash ที่รายงานมาเปลี่ยนไปจริงๆ เหตุผลเดียวกับ recordVersion */
   recordConfigHash(orgId: string, agentId: string, configHash: string): void {
     const conn = this.agents.get(mapKey(orgId, agentId));
     if (conn && conn.configHash !== configHash) {
@@ -192,10 +188,10 @@ export class AgentRegistry extends EventEmitter {
     }
   }
 
-  /** Same convergence reasoning as needsUpdate — an inequality check against
-   * the server's desired config hash, not "older than" (config hashes have
-   * no ordering at all). configUpdateOfferedForHash is the real guard here,
-   * same as needsUpdate's updateOfferedForVersion. */
+  /** เหตุผล convergence เดียวกับ needsUpdate — เช็คความไม่เท่ากันกับ config
+   * hash ที่เซิร์ฟเวอร์ต้องการ ไม่ใช่ "เก่ากว่า" (config hash ไม่มีลำดับใดๆ
+   * เลย) configUpdateOfferedForHash คือ guard จริงตรงนี้ เหมือนกับ
+   * updateOfferedForVersion ของ needsUpdate */
   needsConfigUpdate(orgId: string, agentId: string, desiredHash: string): boolean {
     const conn = this.agents.get(mapKey(orgId, agentId));
     if (!conn || !conn.configHash) return false;
@@ -213,40 +209,38 @@ export class AgentRegistry extends EventEmitter {
       conn.lastTelemetry = snapshot;
       conn.lastSeenAt = Date.now();
       this.emit("update", toSummary(conn));
-      // Distinct from "update" so a durable-storage listener (db/persistence.ts)
-      // can append one time-series row per snapshot without re-deriving that
-      // from a generic state-change event that also fires on plain heartbeats.
+      // แยกจาก "update" เพื่อให้ listener ที่เก็บข้อมูลถาวร (db/persistence.ts)
+      // เพิ่มแถว time-series ได้หนึ่งแถวต่อ snapshot โดยไม่ต้อง derive สิ่งนี้
+      // จาก generic state-change event ที่ยิงตอน heartbeat ธรรมดาด้วยเช่นกัน
       this.emit("telemetry", { orgId, agentId, snapshot });
     }
   }
 
   /**
-   * Relays one incremental chunk of a streaming command's output (e.g. one
-   * tracert hop) to whatever's listening for it — the dashboard WebSocket
-   * server (ws/dashboardServer.ts) forwards this straight to browser clients
-   * so a running network_diagnostic renders line-by-line instead of only
-   * appearing once the whole command finishes. Distinct from "update"/
-   * "telemetry": this isn't agent state, it's a transient event with no
-   * corresponding stored value in AgentConnection.
+   * ส่งต่อผลลัพธ์ทีละส่วนของ streaming command (เช่น หนึ่ง hop ของ tracert)
+   * ไปยังทุกอย่างที่กำลังฟังอยู่ — dashboard WebSocket server
+   * (ws/dashboardServer.ts) ส่งต่อสิ่งนี้ไปยัง browser client ตรงๆ เพื่อให้
+   * network_diagnostic ที่กำลังรันแสดงผลทีละบรรทัดแทนที่จะโผล่มาทีเดียวตอน
+   * คำสั่งจบทั้งหมด แยกจาก "update"/"telemetry": นี่ไม่ใช่ agent state แต่
+   * เป็น event ชั่วคราวที่ไม่มีค่าที่เก็บไว้ใน AgentConnection คู่กัน
    */
   recordCommandOutput(orgId: string, agentId: string, payload: CommandOutputPayload): void {
     this.emit("command_output", { orgId, agentId, payload });
   }
 
-  // Warm-starts this in-memory registry from durable storage (Postgres's
-  // agents table — see db/persistence.ts's loadPersistedAgents) right after
-  // construction, before any real agent reconnects. Without this, every
-  // server restart blanked lastTelemetry/remoteIp back to null until that
-  // agent's next scheduled poll (up to 5 minutes on the normal interval) —
-  // the dashboard's "Live" tab and the Asset Registry's CPU/RAM/storage/IP
-  // columns all read lastTelemetry, so a restart made a perfectly healthy,
-  // still-reporting device look like it had no data at all in the meantime.
-  // Always seeded as "offline" with no socket, regardless of what the DB
-  // said before the restart — this process hasn't actually seen a
-  // connection yet, and register()'s own carry-over logic
-  // (`existing?.lastTelemetry ?? null`) upgrades it to "online" with the
-  // real socket the moment the agent's own reconnect (with backoff) lands,
-  // same as it already does for a same-process reconnect.
+  // Warm-start registry ในหน่วยความจำนี้จาก durable storage (ตาราง agents
+  // ของ Postgres — ดู loadPersistedAgents ใน db/persistence.ts) ทันทีหลัง
+  // สร้าง ก่อนที่ agent จริงตัวไหนจะ reconnect ถ้าไม่มีส่วนนี้ ทุกครั้งที่
+  // เซิร์ฟเวอร์ restart lastTelemetry/remoteIp จะกลายเป็น null จนกว่าจะถึงรอบ
+  // poll ถัดไปของ agent นั้น (นานสุดถึง 5 นาทีตามช่วงปกติ) — แท็บ "Live" ของ
+  // dashboard และคอลัมน์ CPU/RAM/storage/IP ของ Asset Registry ล้วนอ่านจาก
+  // lastTelemetry ดังนั้นการ restart จะทำให้อุปกรณ์ที่สุขภาพดีและยังรายงานอยู่
+  // ดูเหมือนไม่มีข้อมูลเลยในช่วงนั้น seed เป็น "offline" ไม่มี socket เสมอ
+  // ไม่ว่า DB จะบอกอะไรไว้ก่อน restart — process นี้ยังไม่เคยเห็น connection
+  // จริงๆ และ logic การส่งต่อค่าของ register() เอง
+  // (`existing?.lastTelemetry ?? null`) จะอัปเกรดเป็น "online" พร้อม socket
+  // จริงทันทีที่ agent นั้น reconnect เอง (พร้อม backoff) มาถึง เหมือนกับที่
+  // มันทำอยู่แล้วสำหรับ reconnect ใน process เดียวกัน
   hydrate(agents: AgentSummary[]): void {
     for (const a of agents) {
       this.agents.set(mapKey(a.orgId, a.agentId), {
@@ -263,11 +257,11 @@ export class AgentRegistry extends EventEmitter {
     return this.agents.get(mapKey(orgId, agentId))?.status === "online";
   }
 
-  /** Every connected/known agent across every org — callers that must not
-   * leak across tenants (any dashboard-facing read) are responsible for
-   * filtering the result by orgId themselves. Deliberately unfiltered here
-   * so this class stays a plain connection-state store, not a place tenant
-   * policy has to be duplicated for every future caller. */
+  /** Agent ทุกตัวที่เชื่อมต่ออยู่/รู้จักข้ามทุก org — ผู้เรียกที่ต้องไม่ให้ข้อมูล
+   * รั่วข้าม tenant (การอ่านที่หน้าจอ dashboard ทุกจุด) ต้องกรอง result ด้วย
+   * orgId เอง ตั้งใจไม่กรองไว้ตรงนี้ เพื่อให้ class นี้ยังคงเป็นแค่ที่เก็บ
+   * connection state ธรรมดา ไม่ใช่ที่ที่ policy ของ tenant ต้องถูก duplicate
+   * ให้ผู้เรียกทุกตัวในอนาคต */
   listAll(): AgentSummary[] {
     return [...this.agents.values()].map(toSummary);
   }
@@ -277,9 +271,9 @@ export class AgentRegistry extends EventEmitter {
   }
 
   /**
-   * Sends a signed command to one agent. Returns false (does not throw) if
-   * the agent isn't currently connected — callers decide whether an offline
-   * target is a hard failure or something to report back to the caller.
+   * ส่งคำสั่งที่เซ็นแล้วไปยัง agent ตัวเดียว คืนค่า false (ไม่ throw) ถ้า
+   * agent ไม่ได้เชื่อมต่ออยู่ตอนนี้ — ผู้เรียกเป็นคนตัดสินใจเองว่า target ที่
+   * offline คือความล้มเหลวร้ายแรง หรือแค่สิ่งที่ต้องรายงานกลับไปให้ผู้เรียก
    */
   sendCommand(orgId: string, agentId: string, command: CommandPayload): boolean {
     const conn = this.agents.get(mapKey(orgId, agentId));
@@ -290,10 +284,10 @@ export class AgentRegistry extends EventEmitter {
     return true;
   }
 
-  /** Sends a signed self_update instruction to one agent — same
-   * connectivity check as sendCommand, but a structurally separate method
-   * (not an overload) so it's never possible to pass a self_update through
-   * whatever code path constructs CommandPayloads, or vice versa. */
+  /** ส่งคำสั่ง self_update ที่เซ็นแล้วไปยัง agent ตัวเดียว — เช็ค
+   * connectivity แบบเดียวกับ sendCommand แต่แยก method ออกจากกันโดยโครงสร้าง
+   * (ไม่ใช่ overload) เพื่อไม่ให้มีทางส่ง self_update ผ่าน code path ที่สร้าง
+   * CommandPayload ได้เลย หรือในทางกลับกัน */
   sendSelfUpdate(orgId: string, agentId: string, payload: SelfUpdatePayload): boolean {
     const conn = this.agents.get(mapKey(orgId, agentId));
     if (!conn?.socket || conn.socket.readyState !== conn.socket.OPEN) {
@@ -303,9 +297,8 @@ export class AgentRegistry extends EventEmitter {
     return true;
   }
 
-  /** Sends a signed config_update instruction to one agent — same
-   * connectivity check and same structural-isolation reasoning as
-   * sendSelfUpdate. */
+  /** ส่งคำสั่ง config_update ที่เซ็นแล้วไปยัง agent ตัวเดียว — เช็ค
+   * connectivity และเหตุผลการแยกโครงสร้างเดียวกับ sendSelfUpdate */
   sendConfigUpdate(orgId: string, agentId: string, payload: ConfigUpdatePayload): boolean {
     const conn = this.agents.get(mapKey(orgId, agentId));
     if (!conn?.socket || conn.socket.readyState !== conn.socket.OPEN) {

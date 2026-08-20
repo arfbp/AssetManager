@@ -1,7 +1,6 @@
-// Small inline icon set shared across the dashboard — same visual language
-// as the sidebar's nav icons (20x20 viewBox, stroke-only, currentColor) so a
-// stat tile's icon and a nav item's icon never look like they came from two
-// different icon sets.
+// ชุดไอคอนแบบ inline เล็กๆ ที่ใช้ร่วมกันทั่ว dashboard — ภาษาภาพเดียวกับ
+// ไอคอน nav ของ sidebar (viewBox 20x20, มีแค่เส้น stroke, ใช้ currentColor)
+// เพื่อไม่ให้ไอคอนของ stat tile กับไอคอนของ nav ดูเหมือนมาจากคนละชุด
 type IconProps = { className?: string };
 
 const BASE = "h-[18px] w-[18px]";

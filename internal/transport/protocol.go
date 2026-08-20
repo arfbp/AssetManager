@@ -1,6 +1,6 @@
-// Package transport implements the agent's real-time control channel: an
-// outbound WebSocket connection to the fleet server carrying heartbeats and
-// telemetry, and inbound signed commands.
+// Package transport คือ control channel แบบ real-time ของ agent: WebSocket
+// connection ขาออกไปยัง fleet server ที่พา heartbeat และ telemetry ไป
+// และรับคำสั่งที่เซ็นมาแล้วเข้ามา
 package transport
 
 import (
@@ -16,7 +16,7 @@ import (
 	"optifleet-agent/internal/telemetry"
 )
 
-// MessageType discriminates the envelope's Payload.
+// MessageType ใช้แยกแยะชนิดของ Payload ใน envelope
 type MessageType string
 
 const (
@@ -25,23 +25,23 @@ const (
 	TypeCommand       MessageType = "command"        // server -> agent
 	TypeCommandResult MessageType = "command_result" // agent -> server
 	TypeCommandOutput MessageType = "command_output" // agent -> server, streamed incrementally during a long-running command
-	TypeAlert         MessageType = "alert"          // agent -> server, self-healing engine events
-	// TypeSelfUpdate is deliberately never produced by anything downstream of
-	// the AI command parser/guardrail (server/src/llm/schema.ts's action enum
-	// and protocol.ts's CommandAction type both simply never include it) — it
-	// only ever comes from the server's own version-check logic in
-	// ws/server.ts, never from a user-dispatched or AI-parsed command. See
-	// internal/selfupdate for how the agent handles it.
+	TypeAlert         MessageType = "alert"          // agent -> server, event ของ self-healing engine
+	// TypeSelfUpdate ตั้งใจไม่ให้ถูกสร้างโดยอะไรก็ตามที่อยู่ปลายทางของ AI
+	// command parser/guardrail เลย (action enum ของ server/src/llm/schema.ts
+	// และ CommandAction type ของ protocol.ts ทั้งคู่ไม่มีค่านี้อยู่เลย) —
+	// มันมาจาก version-check logic ของ server เองใน ws/server.ts เท่านั้น
+	// ไม่เคยมาจากคำสั่งที่ user สั่งหรือ AI parse มา ดู internal/selfupdate
+	// ว่า agent จัดการมันยังไง
 	TypeSelfUpdate MessageType = "self_update" // server -> agent
-	// TypeConfigUpdate is isolated from the AI/guardrail pipeline the exact
-	// same way TypeSelfUpdate is (see above) — it only ever comes from the
-	// server's own config-convergence check in ws/server.ts, comparing
-	// ConfigHash reported in each heartbeat against the server's own
-	// desired-config file. See internal/configpush.
+	// TypeConfigUpdate ถูกแยกออกจาก pipeline ของ AI/guardrail ด้วยวิธี
+	// เดียวกับ TypeSelfUpdate เป๊ะ ๆ (ดูด้านบน) — มันมาจาก
+	// config-convergence check ของ server เองใน ws/server.ts เท่านั้น ที่
+	// เทียบ ConfigHash ที่รายงานมาในแต่ละ heartbeat กับไฟล์
+	// desired-config ของ server เอง ดู internal/configpush
 	TypeConfigUpdate MessageType = "config_update" // server -> agent
 )
 
-// Envelope is the single wire format for every message in both directions.
+// Envelope คือ wire format แบบเดียวที่ใช้กับทุก message ทั้งสองทิศทาง
 type Envelope struct {
 	Type    MessageType     `json:"type"`
 	Payload json.RawMessage `json:"payload"`
@@ -50,14 +50,13 @@ type Envelope struct {
 type HeartbeatPayload struct {
 	AgentID string `json:"agent_id"`
 	Uptime  int64  `json:"uptime_seconds"`
-	// Version lets the server (ws/server.ts) notice an outdated agent and
-	// push a self_update — see internal/version.
+	// Version ให้ server (ws/server.ts) สังเกตได้ว่า agent เวอร์ชันเก่าแล้ว
+	// จะได้ push self_update — ดู internal/version
 	Version string `json:"version"`
-	// ConfigHash is a SHA256 of the agent's own currently-loaded agent.yaml
-	// file bytes, computed once at startup (see cmd/agent/main.go). Lets the
-	// server (ws/server.ts) notice this agent's config has drifted from the
-	// fleet's desired config and push a config_update — see
-	// internal/configpush.
+	// ConfigHash คือ SHA256 ของไบต์ไฟล์ agent.yaml ที่ agent โหลดอยู่ตอนนี้
+	// คำนวณครั้งเดียวตอน startup (ดู cmd/agent/main.go) ให้ server
+	// (ws/server.ts) สังเกตได้ว่า config ของ agent นี้ drift ไปจาก desired
+	// config ของฟลีตแล้ว จะได้ push config_update — ดู internal/configpush
 	ConfigHash string `json:"config_hash"`
 }
 
@@ -65,12 +64,12 @@ type TelemetryPayload struct {
 	Snapshot telemetry.Snapshot `json:"snapshot"`
 }
 
-// CommandPayload is a command issued by the server. Signature is an
-// HMAC-SHA256 (hex) computed by the server over ID+Action+Params+IssuedAtUnix
-// using the shared secret configured out-of-band — the agent recomputes it
-// locally and refuses to execute on mismatch. This stops a compromised or
-// spoofed relay from injecting commands even over an otherwise-authenticated
-// WebSocket session.
+// CommandPayload คือคำสั่งที่ server ออกมา Signature เป็น HMAC-SHA256
+// (hex) ที่ server คำนวณจาก ID+Action+Params+IssuedAtUnix โดยใช้ shared
+// secret ที่ config ไว้แบบ out-of-band — agent คำนวณซ้ำในเครื่องแล้วปฏิเสธ
+// ไม่รันถ้าไม่ตรงกัน ป้องกันไม่ให้ relay ที่ถูก compromise หรือปลอมแปลง
+// injection คำสั่งเข้ามาได้ แม้จะผ่าน WebSocket session ที่
+// authenticate แล้วก็ตาม
 type CommandPayload struct {
 	ID           string            `json:"id"`
 	Action       string            `json:"action"` // e.g. "kill_process", "clean_temp", "restart_host"
@@ -79,21 +78,21 @@ type CommandPayload struct {
 	Signature    string            `json:"signature"`
 }
 
-// netstring encodes s as "<byte-length>:<bytes>" (Bencode-style). It is
-// self-delimiting — no escaping is needed for any byte content, including a
-// run_script body that might contain arbitrary shell/PowerShell text. This
-// is deliberately not JSON: reproducing Go's json.Marshal byte-for-byte in
-// another language means also reproducing its default HTML-escaping of
-// `<`, `>`, `&`, which is a real footgun for exactly the kind of content
-// run_script carries. See optifleet-server/src/crypto/commandSigner.ts for
-// the matching TypeScript implementation — the two MUST stay in sync.
+// netstring encode s เป็น "<byte-length>:<bytes>" (สไตล์ Bencode) เป็นแบบ
+// self-delimiting — ไม่ต้อง escape byte content อะไรเลย รวมถึง body ของ
+// run_script ที่อาจมีข้อความ shell/PowerShell แบบไหนก็ได้ ตั้งใจไม่ใช้
+// JSON: การทำ json.Marshal ของ Go ให้ตรงกัน byte-ต่อ-byte ในภาษาอื่น
+// หมายถึงต้อง reproduce การ HTML-escape ค่า default ของมันสำหรับ `<`, `>`,
+// `&` ด้วย ซึ่งเป็น footgun จริง ๆ สำหรับเนื้อหาแบบที่ run_script พาไปพอดี
+// ดู optifleet-server/src/crypto/commandSigner.ts สำหรับ TypeScript
+// implementation ที่ตรงกัน — ทั้งสองฝั่งต้องซิงค์กันเสมอ
 func netstring(s string) string {
 	return strconv.Itoa(len(s)) + ":" + s
 }
 
-// CanonicalString produces a deterministic representation for signing.
-// Params are sorted by key (map iteration order in Go is randomized) and
-// each field is netstring-encoded so concatenation is unambiguous.
+// CanonicalString สร้าง representation แบบ deterministic สำหรับเซ็น
+// Params เรียงตาม key (ลำดับการ iterate map ใน Go เป็นแบบสุ่ม) และแต่ละ
+// field encode ด้วย netstring เพื่อให้การต่อ string ไม่กำกวม
 func (c CommandPayload) CanonicalString() string {
 	keys := make([]string, 0, len(c.Params))
 	for k := range c.Params {
@@ -115,7 +114,7 @@ func (c CommandPayload) CanonicalString() string {
 	return b.String()
 }
 
-// VerifySignature checks the HMAC-SHA256 signature against secret.
+// VerifySignature ตรวจ HMAC-SHA256 signature เทียบกับ secret
 func (c CommandPayload) VerifySignature(secret string) bool {
 	if c.Signature == "" || secret == "" {
 		return false
@@ -126,16 +125,16 @@ func (c CommandPayload) VerifySignature(secret string) bool {
 	return hmac.Equal([]byte(expected), []byte(c.Signature))
 }
 
-// SelfUpdatePayload instructs the agent to download and install a specific
-// new build of itself. Signed the same way CommandPayload is (HMAC-SHA256
-// over a netstring-canonical form, same shared secret) — this is the one
-// message type that makes the agent download-and-execute new code, so it
-// gets exactly as much integrity protection as an operator-dispatched
-// command, even though nothing about it ever passes through the guardrail.
-// URL is always the agent hub's own host:port (the same TLS connection/cert
-// the agent already trusts for its WebSocket — see selfupdate.Apply), not
-// an arbitrary server-supplied address, precisely so a compromised signing
-// secret is the only way to redirect this to somewhere else.
+// SelfUpdatePayload สั่งให้ agent download และติดตั้ง build ใหม่ของ
+// ตัวเองที่ระบุไว้ เซ็นด้วยวิธีเดียวกับ CommandPayload (HMAC-SHA256 บน
+// netstring-canonical form, shared secret เดียวกัน) — นี่คือ message type
+// เดียวที่ทำให้ agent download-and-execute โค้ดใหม่ จึงได้รับการปกป้อง
+// เรื่อง integrity เท่ากับคำสั่งที่ operator สั่งเป๊ะ ๆ แม้จะไม่มีส่วนไหน
+// เลยที่ผ่าน guardrail ก็ตาม URL เป็น host:port ของ agent hub เองเสมอ
+// (TLS connection/cert ตัวเดียวกับที่ agent ไว้ใจอยู่แล้วสำหรับ WebSocket
+// ของมัน — ดู selfupdate.Apply) ไม่ใช่ address ที่ server ส่งมาแบบไหนก็ได้
+// เพื่อให้ secret ที่ใช้เซ็นถูก compromise เป็นทางเดียวเท่านั้นที่จะ
+// redirect ไปที่อื่นได้
 type SelfUpdatePayload struct {
 	Version      string `json:"version"`
 	URL          string `json:"url"`
@@ -153,8 +152,8 @@ func (s SelfUpdatePayload) canonicalString() string {
 	return b.String()
 }
 
-// VerifySignature checks the HMAC-SHA256 signature against secret — same
-// reasoning as CommandPayload.VerifySignature.
+// VerifySignature ตรวจ HMAC-SHA256 signature เทียบกับ secret — เหตุผล
+// เดียวกับ CommandPayload.VerifySignature
 func (s SelfUpdatePayload) VerifySignature(secret string) bool {
 	if s.Signature == "" || secret == "" {
 		return false
@@ -165,19 +164,20 @@ func (s SelfUpdatePayload) VerifySignature(secret string) bool {
 	return hmac.Equal([]byte(expected), []byte(s.Signature))
 }
 
-// ConfigUpdatePayload instructs the agent to replace its own agent.yaml
-// content and, if EnableRunScript is set, ensure
-// OPTIFLEET_ENABLE_RUN_SCRIPT=true is present in the service's environment,
-// then restart. Same trust model as SelfUpdatePayload — HMAC-signed over a
-// netstring-canonical form, never reachable from the AI/guardrail pipeline —
-// see internal/configpush and TypeConfigUpdate's doc comment above.
+// ConfigUpdatePayload สั่งให้ agent แทนที่เนื้อหา agent.yaml ของตัวเอง และ
+// ถ้า EnableRunScript ถูก set ไว้ ให้แน่ใจว่า
+// OPTIFLEET_ENABLE_RUN_SCRIPT=true มีอยู่ใน environment ของ service แล้ว
+// restart trust model เดียวกับ SelfUpdatePayload — เซ็นด้วย HMAC บน
+// netstring-canonical form ไม่มีทางเข้าถึงได้จาก pipeline ของ
+// AI/guardrail เลย — ดู internal/configpush และ doc comment ของ
+// TypeConfigUpdate ด้านบน
 //
-// EnableRunScript is a fixed literal flag rather than a generic
-// map[string]string of env vars deliberately: internal/configpush's Windows
-// apply step has to splice values into a generated batch script, and a
-// generic server-supplied key/value pair sitting unescaped in generated
-// batch-script text is a command-injection footgun. A closed set of known
-// literals (currently exactly one) has no such surface.
+// EnableRunScript ตั้งใจให้เป็น flag literal ตายตัวแทนที่จะเป็น
+// map[string]string ของ env var แบบทั่วไป: ขั้นตอน apply บน Windows ของ
+// internal/configpush ต้องแปะค่าลงใน batch script ที่ generate ขึ้น และ
+// คู่ key/value ที่ server ส่งมาแบบทั่วไปโดยไม่ escape อยู่ใน batch-script
+// text ที่ generate ขึ้นเป็น footgun เรื่อง command-injection ชัด ๆ ชุด
+// literal ที่รู้จักแบบปิด (ตอนนี้มีอยู่ตัวเดียวพอดี) ไม่มีช่องโหว่แบบนั้น
 type ConfigUpdatePayload struct {
 	ConfigYAML      string `json:"config_yaml"`
 	ConfigSHA256    string `json:"config_sha256"`
@@ -195,8 +195,8 @@ func (c ConfigUpdatePayload) canonicalString() string {
 	return b.String()
 }
 
-// VerifySignature checks the HMAC-SHA256 signature against secret — same
-// reasoning as CommandPayload.VerifySignature.
+// VerifySignature ตรวจ HMAC-SHA256 signature เทียบกับ secret — เหตุผล
+// เดียวกับ CommandPayload.VerifySignature
 func (c ConfigUpdatePayload) VerifySignature(secret string) bool {
 	if c.Signature == "" || secret == "" {
 		return false
@@ -214,13 +214,12 @@ type CommandResultPayload struct {
 	ExecutedUnix int64  `json:"executed_unix"`
 }
 
-// CommandOutputPayload carries one incremental chunk (typically one line)
-// of a long-running command's output as it's produced — e.g. one hop of a
-// tracert, or one line of ping's reply log — rather than making the caller
-// wait for the whole command to finish before seeing anything. Done=true
-// marks the final chunk (Line may be empty on that one); Error carries a
-// failure that happened mid-stream (e.g. the command timed out), distinct
-// from a merely-empty successful run.
+// CommandOutputPayload พา output ของคำสั่งที่รันนานทีละ chunk (ปกติทีละ
+// บรรทัด) ตามที่มันถูกผลิตออกมา — เช่น หนึ่ง hop ของ tracert หรือหนึ่ง
+// บรรทัด reply log ของ ping — แทนที่จะให้ caller รอทั้งคำสั่งจบก่อนถึงจะ
+// เห็นอะไร Done=true คือ chunk สุดท้าย (Line อาจว่างเปล่าในตัวนั้น);
+// Error พา failure ที่เกิดกลาง stream (เช่น คำสั่ง timeout) แยกจากการรัน
+// สำเร็จที่แค่ไม่มี output
 type CommandOutputPayload struct {
 	CommandID string `json:"command_id"`
 	Line      string `json:"line"`
@@ -228,10 +227,10 @@ type CommandOutputPayload struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// AlertPayload carries a self-healing engine event to the server: a service
-// was auto-restarted, a disk was auto-cleaned, a suspected memory leak was
-// found, etc. Kind is a stable machine-readable label; Fields carries
-// event-specific detail for display/alerting server-side.
+// AlertPayload พา event ของ self-healing engine ไปให้ server: service
+// ถูก auto-restart, ดิสก์ถูก auto-clean, เจอ memory leak ที่ต้องสงสัย
+// ฯลฯ Kind เป็น label ที่เครื่องอ่านได้แบบ stable; Fields พารายละเอียด
+// เฉพาะของแต่ละ event ไว้แสดงผล/alert ฝั่ง server
 type AlertPayload struct {
 	Kind      string            `json:"kind"`
 	Message   string            `json:"message"`

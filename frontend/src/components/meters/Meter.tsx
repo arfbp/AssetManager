@@ -13,10 +13,10 @@ interface MeterProps {
 }
 
 /**
- * Fill carries severity; the unfilled track is a neutral, one-step-off-
- * surface gray so state reads from the fill alone — see the dataviz
- * skill's meter spec. Severity is never color-only: the numeric value is
- * always printed beside it.
+ * ส่วนที่เติมสีบอกระดับความรุนแรง ส่วนรางที่ยังไม่เติมใช้สีเทากลางๆ ห่าง
+ * จากพื้นหลังแค่หนึ่งระดับ เพื่อให้สถานะอ่านจากส่วนที่เติมสีอย่างเดียวได้
+ * ความรุนแรงไม่ใช้สีอย่างเดียวบอก เสมอมีตัวเลขกำกับไว้ข้างๆ ด้วย เพื่อให้
+ * อ่านค่าได้แม้แยกสีไม่ออก
  */
 export function Meter({ label, percent, detail }: MeterProps) {
   const clamped = Math.max(0, Math.min(100, percent));

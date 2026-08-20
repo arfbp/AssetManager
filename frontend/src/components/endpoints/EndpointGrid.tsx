@@ -2,15 +2,15 @@ import { EndpointCard } from "./EndpointCard";
 import type { AgentSummary } from "@/lib/types";
 
 interface EndpointGridProps {
-  /** The full, unfiltered fleet — only used to distinguish "no devices at
-   * all" from "no devices match the current search/filters" in the empty
-   * state below. FleetStats (the tiles above this grid) is rendered by the
-   * caller, not here, so it always summarizes the real fleet regardless of
-   * what's filtered in displayAgents. */
+  /** ฟลีตทั้งหมดแบบไม่กรอง — ใช้แค่แยกกรณี "ยังไม่มีอุปกรณ์เลย" กับ
+   * "ไม่มีอุปกรณ์ที่ตรงกับการค้นหา/filter ปัจจุบัน" ใน empty state
+   * ด้านล่าง ส่วน FleetStats (การ์ดตัวเลขด้านบน grid นี้) ฝั่งที่เรียกใช้
+   * เป็นคน render เอง ไม่ใช่ที่นี่ จึงสรุปยอดจากฟลีตจริงเสมอ ไม่ขึ้นกับว่า
+   * displayAgents กรองอะไรอยู่ */
   agents: AgentSummary[];
-  /** The cards actually rendered — pass a filtered subset (e.g. a search
-   * match or a status/country/type filter). Defaults to `agents` itself
-   * when there's no separate filtered view. */
+  /** การ์ดที่ render จริง — ส่ง subset ที่กรองแล้วมา (เช่นผลค้นหา หรือ
+   * filter สถานะ/ประเทศ/ประเภท) ถ้าไม่มี view ที่กรองแยกจะใช้ `agents`
+   * เป็นค่า default */
   displayAgents?: AgentSummary[];
   onSelect: (agentId: string) => void;
 }

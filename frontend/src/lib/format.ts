@@ -1,12 +1,11 @@
-// Formatting + threshold helpers shared by the meters, cards, and tables.
+// ฟังก์ชันช่วยจัดรูปแบบตัวเลข + คำนวณเกณฑ์ ใช้ร่วมกันโดย meter, card และตาราง
 
 export type Severity = "good" | "warning" | "critical";
 
-// Thresholds intentionally match the Go agent's own alert-mode trigger
-// (internal/telemetry/poller.go: cpu/mem >= 85% -> alert mode) — the
-// dashboard's "critical" tier lines up with the exact point the agent
-// itself starts polling more aggressively, so the UI and the agent agree
-// on what "trouble" means.
+// ตั้งใจให้ threshold ตรงกับจุดที่ Go agent เข้าสู่ alert mode เอง
+// (internal/telemetry/poller.go: cpu/mem >= 85% -> alert mode) — ระดับ
+// "critical" ของ dashboard จึงตรงกับจุดเดียวกับที่ agent เริ่ม poll ถี่ขึ้น
+// พอดี ทำให้ทั้ง UI และ agent มองคำว่า "มีปัญหา" ตรงกัน
 export function severityForPercent(percent: number): Severity {
   if (percent >= 85) return "critical";
   if (percent >= 70) return "warning";

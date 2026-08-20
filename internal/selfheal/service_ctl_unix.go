@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-// unixServiceController shells out to systemctl (Linux) or launchctl
-// (macOS) — there is no equivalent of Windows' SCM API for either, so the
-// standard CLI tooling is the practical option here, same as most Linux/macOS
-// management agents.
+// unixServiceController shell out ไปเรียก systemctl (Linux) หรือ
+// launchctl (macOS) — ไม่มี API แบบ SCM ของ Windows ให้ใช้บนทั้งสองระบบนี้
+// ดังนั้น CLI tooling มาตรฐานคือทางเลือกที่ใช้งานได้จริงตรงนี้ เหมือนกับ
+// management agent ส่วนใหญ่บน Linux/macOS
 type unixServiceController struct{}
 
 func NewServiceController() ServiceController {
@@ -25,9 +25,9 @@ func (unixServiceController) Status(ctx context.Context, name string) (ServiceSt
 	case "linux":
 		out, err := exec.CommandContext(ctx, "systemctl", "is-active", name).Output()
 		state := strings.TrimSpace(string(out))
-		// systemctl is-active exits non-zero for "inactive"/"failed" but
-		// still prints a valid state to stdout — only empty output plus an
-		// error means the command itself failed to run.
+		// systemctl is-active exit ไม่เป็น 0 สำหรับสถานะ "inactive"/"failed"
+		// แต่ก็ยังพิมพ์ state ที่ valid ออกมาทาง stdout — ต้อง output ว่าง
+		// เปล่าร่วมกับมี error เท่านั้นถึงจะหมายความว่าคำสั่งเองรันไม่สำเร็จ
 		if state == "" && err != nil {
 			return StateUnknown, fmt.Errorf("selfheal: systemctl is-active %q: %w", name, err)
 		}
@@ -41,7 +41,7 @@ func (unixServiceController) Status(ctx context.Context, name string) (ServiceSt
 		}
 	case "darwin":
 		if err := exec.CommandContext(ctx, "launchctl", "list", name).Run(); err != nil {
-			// launchctl list exits non-zero when the label isn't loaded.
+			// launchctl list exit ไม่เป็น 0 เมื่อ label นั้นยังไม่ได้ load
 			return StateStopped, nil
 		}
 		return StateRunning, nil

@@ -1,16 +1,16 @@
-// IP-based geolocation for the "Live Tracking" page — deliberately not real
-// GPS. This project has no vehicle/GPS hardware anywhere in it; what it does
-// have is each agent's real public IP (self-reported by the agent via an
-// external lookup — internal/telemetry/publicip.go — since only the agent's
-// own network position can determine its internet-facing address; a
-// same-LAN server would otherwise only ever see a private one), which this
-// resolves to an approximate location AND ISP/ASN/postal/timezone detail
-// via a free external API — the same level of detail a "what's my IP" site
-// shows. Two honest limits worth knowing: (1) a private/LAN IP can never be
-// geolocated at all — there's nothing to look up — so those are marked
-// isPrivate rather than guessed at; (2) even a real public IP only
-// geolocates to roughly the ISP's regional point, not a precise address,
-// and every device behind the same office router shares that one point.
+// การระบุตำแหน่งจาก IP สำหรับหน้า "Live Tracking" — ตั้งใจไม่ใช่ GPS จริง
+// โปรเจกต์นี้ไม่มีฮาร์ดแวร์ยานพาหนะ/GPS อยู่ที่ไหนเลย สิ่งที่มีคือ public IP
+// จริงของแต่ละ agent (agent รายงานเองผ่านการ lookup ภายนอก —
+// internal/telemetry/publicip.go — เพราะมีแค่ตำแหน่งเครือข่ายของ agent เอง
+// เท่านั้นที่รู้ address ที่หันหน้าเข้าอินเทอร์เน็ตของตัวเองได้ ถ้าให้ server
+// ที่อยู่ LAN เดียวกันเช็คจะเห็นแค่ IP วงในเท่านั้น) ซึ่งไฟล์นี้จะ resolve เป็น
+// ตำแหน่งโดยประมาณ พร้อมรายละเอียด ISP/ASN/รหัสไปรษณีย์/timezone ผ่าน API
+// ภายนอกแบบฟรี — รายละเอียดระดับเดียวกับเว็บ "what's my IP" ทั่วไป มีข้อจำกัด
+// จริง ๆ ที่ควรรู้ไว้สองอย่าง: (1) IP ส่วนตัว/LAN ไม่มีทางระบุตำแหน่งได้เลย —
+// ไม่มีอะไรให้ lookup — จึงทำเครื่องหมายเป็น isPrivate แทนการเดา (2) แม้แต่
+// public IP จริงก็ระบุตำแหน่งได้แค่คร่าว ๆ ระดับจุดของ ISP ในภูมิภาคนั้น
+// ไม่ใช่ address ที่แม่นยำ และทุกอุปกรณ์หลัง router ออฟฟิศเดียวกันจะได้จุด
+// เดียวกันหมด
 import type { Pool } from "pg";
 import { log } from "../logger.js";
 
@@ -70,10 +70,10 @@ const EMPTY_GEO: Omit<GeoResult, "ip" | "isPrivate"> = {
   timezone: null,
 };
 
-// RFC1918 (IPv4 private), link-local, and IPv6 unique-local/link-local
-// ranges — the addresses every device on a LAN actually has. Assumes
-// ws/server.ts's normalizeIp already stripped any "::ffff:" IPv4-mapped
-// prefix, so a dual-stack peer's address looks like plain IPv4 here.
+// ช่วง RFC1918 (IPv4 private), link-local และ IPv6 unique-local/link-local
+// — คือ address ที่อุปกรณ์ทุกตัวบน LAN มีอยู่จริง สมมติว่า normalizeIp ใน
+// ws/server.ts ได้ตัด prefix "::ffff:" แบบ IPv4-mapped ออกไปแล้ว ดังนั้น
+// address ของ peer แบบ dual-stack จะดูเหมือน IPv4 ธรรมดาตรงนี้
 export function isPrivateIp(ip: string): boolean {
   if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost") return true;
   const v4 = ip.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
@@ -112,12 +112,12 @@ async function storeCached(pool: Pool, r: GeoResult): Promise<void> {
   );
 }
 
-// ip-api.com's free tier: no API key, ~45 requests/minute, HTTP only (not
-// HTTPS) on the free plan — fine here since the call originates server-side,
-// never from the browser. Swap this for a paid/keyed provider (ipinfo.io,
-// MaxMind, ...) if the fleet grows past that rate or needs HTTPS-only
-// egress; the cache above means this only ever runs once per IP per 30
-// days regardless.
+// free tier ของ ip-api.com: ไม่ต้องใช้ API key, จำกัดประมาณ 45 request/นาที,
+// แผนฟรีรองรับแค่ HTTP (ไม่ใช่ HTTPS) — ไม่มีปัญหาตรงนี้เพราะเรียกจากฝั่ง
+// server เท่านั้น ไม่เคยเรียกจาก browser เลย เปลี่ยนไปใช้ provider แบบเสีย
+// เงิน/มี key (ipinfo.io, MaxMind, ...) แทนได้ ถ้า fleet โตเกินอัตรานี้หรือ
+// ต้องการ egress แบบ HTTPS เท่านั้น cache ด้านบนทำให้ยังไงก็เรียกแค่ครั้ง
+// เดียวต่อ IP ทุก 30 วันอยู่ดี
 async function fetchPublicGeolocation(ip: string): Promise<Omit<GeoResult, "ip" | "isPrivate">> {
   const res = await fetch(
     `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,message,city,regionName,country,lat,lon,isp,as,zip,timezone`,
@@ -146,8 +146,9 @@ async function fetchPublicGeolocation(ip: string): Promise<Omit<GeoResult, "ip" 
     lat: data.lat ?? null,
     lon: data.lon ?? null,
     isp: data.isp ?? null,
-    // ip-api's "as" field is "AS24187 KIRZ Leaseline Network" — the whole
-    // string, ASN and org name together, same as ISP lookup sites show it.
+    // field "as" ของ ip-api คือ "AS24187 KIRZ Leaseline Network" — ทั้ง
+    // string เลย ทั้ง ASN และชื่อ org รวมกัน เหมือนกับที่เว็บ lookup ISP
+    // ทั่วไปแสดง
     asn: data.as ?? null,
     zip: data.zip ?? null,
     timezone: data.timezone ?? null,

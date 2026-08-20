@@ -1,9 +1,10 @@
-// Persists platform-admin actions to Postgres so they're visible from the
-// dashboard — distinct from server/src/logger.ts's `audit` Pino logger,
-// which every one of these call sites ALSO still calls (that one's for
-// ops/stdout, this one's for the product). Deliberately scoped to actions
-// gated by routes.ts's requirePlatformAdmin specifically, not general
-// per-org activity — see migrations/0010_audit_events.sql's doc comment.
+// บันทึกการกระทำของ platform-admin ลง Postgres เพื่อให้เห็นได้จาก dashboard
+// — แยกออกจาก Pino logger `audit` ใน server/src/logger.ts ซึ่งทุกจุดที่เรียก
+// ใช้ไฟล์นี้ก็ยังคงเรียกใช้ตัวนั้นควบคู่กันไปด้วย (ตัวนั้นมีไว้สำหรับ
+// ops/stdout ส่วนตัวนี้มีไว้สำหรับตัวผลิตภัณฑ์เอง) ตั้งใจจำกัดขอบเขตเฉพาะ
+// action ที่ถูกคุมด้วย requirePlatformAdmin ใน routes.ts เท่านั้น ไม่ใช่
+// กิจกรรมทั่วไปของแต่ละ org — ดู doc comment ของ
+// migrations/0010_audit_events.sql
 import type { Pool } from "pg";
 
 export interface AuditEvent {

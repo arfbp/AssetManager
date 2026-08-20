@@ -1,16 +1,15 @@
-// Powers "query_info" requests from the AI command console — read-only
-// questions about one device (IP address, OS version, uptime, disk space,
-// what's running, what's connected) answered from the last telemetry
-// snapshot already on file, with no round trip to the agent at all. See
-// schema.ts's PARSEABLE_ACTIONS doc comment and routes.ts's short-circuit
-// for why this bypasses the guardrail entirely — it never dispatches
-// anything, so there's nothing for the guardrail to authorize.
+// เป็นตัวขับคำขอ "query_info" จาก AI command console — คำถามอ่านอย่างเดียว
+// เกี่ยวกับอุปกรณ์หนึ่งเครื่อง (IP address, เวอร์ชัน OS, uptime, พื้นที่ดิสก์,
+// อะไรกำลังรันอยู่, มีอะไรเชื่อมต่ออยู่) ตอบจาก telemetry snapshot ล่าสุดที่มี
+// อยู่แล้วในระบบ ไม่มีการ round trip ไปหา agent เลย ดู doc comment ของ
+// PARSEABLE_ACTIONS ใน schema.ts และ short-circuit ใน routes.ts ว่าทำไมโมดูล
+// นี้ถึงข้าม guardrail ไปได้ทั้งหมด — เพราะมันไม่ dispatch อะไรเลย จึงไม่มีอะไร
+// ให้ guardrail ต้องอนุมัติ
 //
-// The one thing that matters here that doesn't matter for the action
-// parser: this must not invent data. The prompt hands the model the actual
-// JSON snapshot and forces it to say so (answerable=false) rather than
-// guess when the data doesn't cover what was asked (e.g. installed
-// software list, which nothing here collects).
+// สิ่งเดียวที่สำคัญตรงนี้แต่ไม่สำคัญสำหรับ action parser คือ ห้ามกุข้อมูลขึ้นมาเอง
+// เด็ดขาด prompt จะส่ง JSON snapshot จริงให้โมเดล และบังคับให้บอกตรง ๆ
+// (answerable=false) แทนที่จะเดา เมื่อข้อมูลไม่ครอบคลุมสิ่งที่ถูกถาม (เช่น
+// รายชื่อซอฟต์แวร์ที่ติดตั้ง ซึ่งระบบนี้ไม่ได้เก็บข้อมูลส่วนนั้นเลย)
 import OpenAI from "openai";
 import { z } from "zod";
 import { log } from "../logger.js";
@@ -23,10 +22,10 @@ const client = new OpenAI({
 
 const MODEL = "llama-3.3-70b-versatile";
 
-// Only the top 20 processes by CPU (already sorted agent-side) go into the
-// prompt even though a snapshot can carry the device's full process list
-// (300+ on a busy machine) — enough to answer "what's running/using CPU"
-// without ballooning every query into a multi-hundred-line prompt.
+// ส่งเข้า prompt แค่ 20 process แรกที่ใช้ CPU สูงสุด (เรียงลำดับมาจากฝั่ง agent
+// แล้ว) แม้ snapshot จะมี process list เต็มของอุปกรณ์ (300+ รายการบนเครื่อง
+// ที่ทำงานหนัก) ก็ตาม — เพียงพอต่อการตอบ "อะไรกำลังรันอยู่/ใช้ CPU" โดยไม่ทำให้
+// ทุกคำถามกลายเป็น prompt ยาวหลายร้อยบรรทัด
 const MAX_PROCESSES_IN_PROMPT = 20;
 
 const QueryAnswerSchema = z.object({
@@ -71,16 +70,14 @@ const ANSWER_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
 export interface QueryAnswerInput {
   deviceId: string;
   question: string;
-  // What the action parser (a separate, dedicated classification call —
-  // actionParser.ts) already determined the operator wants to know, e.g.
-  // "ip address". Verified in practice that this call re-interpreting the
-  // raw question from scratch is measurably less reliable than the
-  // classifier — a terse Thai phrasing ("ตรวจหาไอพี เครื่องนี้") was
-  // correctly classified as being about the IP address, then answered as if
-  // it were about CPU/RAM instead when this call was only given the raw
-  // text. Passing the classifier's own conclusion through as a hint fixes
-  // that without needing this call to be as good at open-ended
-  // interpretation as a dedicated classifier already is.
+  // สิ่งที่ action parser (การเรียก classify แยกต่างหากอีกครั้งใน
+  // actionParser.ts) วิเคราะห์ไว้แล้วว่าผู้ควบคุมต้องการรู้อะไร เช่น
+  // "ip address" ทดสอบจริงแล้วพบว่าถ้าให้ call นี้ตีความคำถามดิบเองใหม่ทั้งหมด
+  // จะแม่นยำน้อยกว่า classifier อย่างเห็นได้ชัด — ประโยคภาษาไทยสั้น ๆ
+  // ("ตรวจหาไอพี เครื่องนี้") ถูก classify ถูกต้องว่าถามเรื่อง IP address แต่พอ
+  // ให้ call นี้ได้แค่ข้อความดิบอย่างเดียวกลับตอบราวกับว่าถามเรื่อง CPU/RAM แทน
+  // การส่งผลสรุปของ classifier มาเป็น hint แก้ปัญหานี้ได้ โดยไม่ต้องให้ call นี้
+  // เก่งเรื่องตีความแบบเปิดกว้างเท่า classifier เฉพาะทางที่ทำหน้าที่นั้นอยู่แล้ว
   topicHint: string;
   snapshot: TelemetrySnapshot;
 }
@@ -101,6 +98,8 @@ export async function answerDeviceQuery(input: QueryAnswerInput): Promise<QueryA
     mem_total_mb: Math.round(s.mem_total_mb),
     disks: s.disks,
     connected_devices: s.connected_devices,
+    local_user_accounts: s.local_users,
+    currently_logged_in_user: s.current_user || null,
     top_processes_by_cpu: s.top_processes.slice(0, MAX_PROCESSES_IN_PROMPT),
     total_process_count: s.top_processes.length,
   };

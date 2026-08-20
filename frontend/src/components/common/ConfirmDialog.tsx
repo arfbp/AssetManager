@@ -1,10 +1,9 @@
 "use client";
 
-// A centered, styled confirmation modal — replaces the browser's native
-// window.confirm() (which can't be styled and looks jarring against the
-// rest of the app) and the chat console's old inline confirm/cancel
-// buttons, so every "are you sure" moment in the app looks and behaves the
-// same way.
+// modal ยืนยันที่จัดกลางจอและมีสไตล์เป็นของตัวเอง — แทนที่ window.confirm()
+// ของเบราว์เซอร์ (แต่งสไตล์ไม่ได้ ดูขัดกับหน้าตาแอป) และปุ่ม confirm/
+// cancel แบบ inline เดิมของ chat console เพื่อให้ทุกจุดที่ต้องถาม
+// "แน่ใจไหม" ในแอปมีหน้าตาและพฤติกรรมเหมือนกันหมด
 interface ConfirmDialogProps {
   open: boolean;
   title: string;

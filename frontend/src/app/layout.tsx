@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { DynamicFavicon } from "@/components/branding/DynamicFavicon";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,11 +8,11 @@ export const metadata: Metadata = {
   description: "Real-time endpoint monitoring, AI command console, and remote process management for IT support.",
 };
 
-// Applies the stored theme before first paint, so there's no flash of the
-// wrong theme while React hydrates (src/components/theme/ThemeToggle.tsx
-// owns the toggle itself). `beforeInteractive` is what guarantees this runs
-// ahead of hydration — Next.js injects it into <head> regardless of where
-// the <Script> component is placed in the tree.
+// ตั้งค่า theme ที่เก็บไว้ก่อน first paint เพื่อไม่ให้เห็น theme ผิดกะพริบ
+// ระหว่างที่ React hydrate (ตัว toggle จริงอยู่ที่
+// src/components/theme/ThemeToggle.tsx) `beforeInteractive` คือตัวที่การันตี
+// ว่ารันก่อน hydration — Next.js จะแทรกเข้า <head> ไม่ว่า <Script> จะวางไว้
+// ตรงไหนใน tree ก็ตาม
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
@@ -33,17 +34,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
-        {/* Display/data face — page headings, table headers, and
-            data-heavy numeric displays (device counts, IDs) use this
-            instead of Inter; body copy/form labels stay on Inter. See
-            tailwind.config.ts's fontFamily.mono. */}
+        {/* ฟอนต์สำหรับ display/data — หัวข้อหน้า, table header, และตัวเลข
+            ที่เน้นข้อมูล (จำนวน device, ID) ใช้ฟอนต์นี้แทน Inter ส่วน body
+            copy/form label ยังใช้ Inter ตามเดิม ดู fontFamily.mono ใน
+            tailwind.config.ts */}
         <link
           href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&display=swap"
           rel="stylesheet"
         />
-        {/* Material Symbols Outlined — the icon font the reference design
-            uses throughout (`<span class="material-symbols-outlined">name</span>`).
-            wght/FILL are variable axes: FILL 1 = solid/active state. */}
+        {/* Material Symbols Outlined — icon font ที่ reference design ใช้ทั่วทั้งแอป
+            (`<span class="material-symbols-outlined">name</span>`)
+            wght/FILL เป็น variable axes: FILL 1 = solid/active state */}
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
           rel="stylesheet"
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script id="theme-init" strategy="beforeInteractive">
           {THEME_INIT_SCRIPT}
         </Script>
+        <DynamicFavicon />
         {children}
       </body>
     </html>

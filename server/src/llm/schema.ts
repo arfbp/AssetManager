@@ -1,36 +1,33 @@
-// The fixed shape every natural-language command must resolve to. The LLM
-// only ever fills in these five fields via forced tool use — it never emits
-// free-form JSON, and it never authors executable content (see
-// uninstallTemplates.ts for why "uninstall_software" doesn't let the model
-// write its own uninstall command).
+// โครงสร้างตายตัวที่คำสั่งภาษาธรรมชาติทุกคำสั่งต้อง resolve ไปหา LLM จะกรอก
+// แค่ 5 field นี้ผ่าน forced tool use เท่านั้น — ไม่มีทางส่ง JSON แบบอิสระออกมา
+// และไม่มีทางเขียนเนื้อหาที่รันได้เอง (ดู uninstallTemplates.ts ว่าทำไม
+// "uninstall_software" ถึงไม่ให้โมเดลเขียนคำสั่งถอนการติดตั้งเอง)
 import { z } from "zod";
 import type OpenAI from "openai";
 
-// "uninstall_software" and "unsupported" are not agent actions — the agent
-// (internal/executor) only implements kill_process / clean_temp /
-// restart_host / run_script. The guardrail maps uninstall_software onto a
-// vetted run_script template (security/guardrail.ts) and always rejects
-// "unsupported" with a clear message back to the caller.
-// "query_info" is not an agent action either — it never dispatches anything
-// to a device at all. It's a read-only question about a device's current
-// state (IP address, OS version, uptime, disk space, what's running, what's
-// connected) that the server can already answer from the last telemetry
-// snapshot it has on file, without a round trip to the agent. See
-// src/llm/queryAnswerer.ts and routes.ts's short-circuit before the
-// guardrail — it's intercepted earlier in the pipeline precisely because
-// evaluateParsedIntent's whole job is deciding whether to *dispatch*
-// something, which a pure read never needs.
-// "ping"/"tracert"/"nslookup"/"netstat" are, like uninstall_software, not
-// wire-level agent actions — the agent only ever receives a single
-// "network_diagnostic" action with a params.tool field (see
-// internal/executor/executor.go's networkDiagnostic). Splitting them into
-// four distinct classifier-facing actions rather than one generic
-// "network_diagnostic" + a tool sub-field avoids widening ParsedIntent's
-// fixed 5-field shape, and target is genuinely just "the host to point the
-// tool at" for these — the same field kill_process already uses for "the
-// process to point the action at". security/guardrail.ts's resolveAction
-// does the translation to the wire-level action, same pattern as
-// uninstall_software -> run_script.
+// "uninstall_software" กับ "unsupported" ไม่ใช่ agent action จริง ๆ — agent
+// (internal/executor) รองรับแค่ kill_process / clean_temp / restart_host /
+// run_script เท่านั้น guardrail จะแปลง uninstall_software ให้กลายเป็น
+// run_script template ที่ผ่านการตรวจสอบแล้ว (security/guardrail.ts) และจะ
+// ปฏิเสธ "unsupported" เสมอพร้อมข้อความแจ้งชัดเจนกลับไปหาผู้เรียก
+// "query_info" ก็ไม่ใช่ agent action เช่นกัน — ไม่มีการ dispatch อะไรไปหา
+// อุปกรณ์เลย เป็นแค่คำถามอ่านอย่างเดียวเกี่ยวกับสถานะปัจจุบันของอุปกรณ์
+// (IP address, เวอร์ชัน OS, uptime, พื้นที่ดิสก์, อะไรกำลังรันอยู่, มีอะไร
+// เชื่อมต่ออยู่) ที่ server ตอบได้จาก telemetry snapshot ล่าสุดที่มีอยู่แล้ว
+// โดยไม่ต้อง round trip ไปหา agent ดู src/llm/queryAnswerer.ts และ
+// short-circuit ใน routes.ts ก่อนถึง guardrail — มันถูกดักไว้ก่อนหน้านั้นใน
+// pipeline เพราะหน้าที่ของ evaluateParsedIntent คือตัดสินใจว่าจะ *dispatch*
+// อะไรหรือไม่ ซึ่งการอ่านอย่างเดียวไม่จำเป็นต้องผ่านขั้นตอนนั้นเลย
+// "ping"/"tracert"/"nslookup"/"netstat" เหมือนกับ uninstall_software คือไม่ใช่
+// agent action ระดับ wire — agent จะได้รับแค่ action เดียวคือ
+// "network_diagnostic" พร้อม field params.tool เท่านั้น (ดู networkDiagnostic
+// ใน internal/executor/executor.go) การแยกเป็น 4 action ต่างหากในฝั่ง
+// classifier แทนที่จะใช้ "network_diagnostic" ตัวเดียว + sub-field tool
+// ช่วยไม่ให้โครงสร้างตายตัว 5 field ของ ParsedIntent ต้องขยายเพิ่ม และ target
+// สำหรับ action พวกนี้ก็คือ "host ที่จะชี้ tool ไปหา" แบบเดียวกับที่
+// kill_process ใช้ field เดียวกันนี้เป็น "process ที่จะชี้ action ไปหา"
+// resolveAction ใน security/guardrail.ts จะแปลงเป็น wire-level action
+// เอง รูปแบบเดียวกับ uninstall_software -> run_script
 export const PARSEABLE_ACTIONS = [
   "kill_process",
   "clean_temp",
@@ -103,8 +100,13 @@ export const EMIT_FLEET_COMMAND_TOOL: OpenAI.Chat.Completions.ChatCompletionTool
             "uninstall_software: remove an installed application. " +
             "query_info: the operator is ASKING a read-only question, not asking to change anything — e.g. " +
             "'what's this machine's IP', 'how much disk space is left', 'how long has it been up', 'what OS " +
-            "version is this', 'what's connected to it', 'what's running on it'. Put a short description of what " +
-            "they want to know in `target` (e.g. 'ip address', 'disk space', 'uptime'). " +
+            "version is this', 'what's connected to it', 'what's running on it', 'what user accounts exist on " +
+            "this machine', 'net user', 'who are the local users', 'is there an admin account'. Note the " +
+            "distinction between 'what accounts EXIST on this machine' (target='local user accounts') and " +
+            "'who is USING/logged into this machine right now' (target='current logged-in user') — these are " +
+            "different questions answered from different data, don't conflate them. Put a short description of " +
+            "what they want to know in `target` (e.g. 'ip address', 'disk space', 'uptime', 'local user " +
+            "accounts', 'current logged-in user'). " +
             "ping: the operator wants to test connectivity to a specific host/website with the ping tool — " +
             "put the hostname/IP in `target` (e.g. 'ping google.com' -> target='google.com'). " +
             "tracert: the operator wants to trace the network route/path to a host (tracert, traceroute) — " +

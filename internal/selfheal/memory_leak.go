@@ -8,15 +8,15 @@ import (
 )
 
 type LeakConfig struct {
-	// GrowthThresholdMB is how much a process's RSS must have grown across
-	// the tracking window before it's flagged.
+	// GrowthThresholdMB คือปริมาณที่ RSS ของ process ต้องโตขึ้นตลอด tracking
+	// window ก่อนจะถูก flag
 	GrowthThresholdMB float64
-	// MinSamples is how many consecutive telemetry snapshots a process must
-	// appear in — each non-decreasing versus the last — before flagging.
-	// This is what separates "leak" from "one noisy spike".
+	// MinSamples คือจำนวน telemetry snapshot ติดต่อกันที่ process ต้อง
+	// ปรากฏอยู่ — แต่ละครั้งต้องไม่ลดลงจากครั้งก่อน — ก่อนจะ flag นี่คือ
+	// สิ่งที่แยก "leak" ออกจาก "spike โผล่มาครั้งเดียว"
 	MinSamples int
-	// WindowSize bounds how many samples per PID are retained; defaults to
-	// MinSamples+2 if unset.
+	// WindowSize จำกัดจำนวน sample ต่อ PID ที่เก็บไว้; ถ้าไม่ set จะ default
+	// เป็น MinSamples+2
 	WindowSize int
 }
 
@@ -25,8 +25,9 @@ type memSample struct {
 	memMB float64
 }
 
-// LeakAlert describes one suspected leak, first detection only — a given PID
-// is reported once per continuous appearance in the tracked process set.
+// LeakAlert อธิบาย leak ที่ต้องสงสัยหนึ่งรายการ ตรวจพบครั้งแรกเท่านั้น —
+// PID หนึ่งตัวจะถูกรายงานแค่ครั้งเดียวต่อการปรากฏต่อเนื่องหนึ่งช่วงใน
+// process set ที่ track อยู่
 type LeakAlert struct {
 	PID       int32
 	Name      string
@@ -35,11 +36,11 @@ type LeakAlert struct {
 	Samples   int
 }
 
-// Detector tracks per-process RSS across telemetry snapshots to spot
-// processes whose memory grows monotonically rather than fluctuating —
-// characteristic of a leak rather than normal workload variance. It holds
-// no more than WindowSize samples per currently-tracked PID, so memory use
-// stays flat regardless of uptime.
+// Detector track RSS ของแต่ละ process ข้าม telemetry snapshot เพื่อจับ
+// process ที่หน่วยความจำโตขึ้นแบบ monotonic แทนที่จะแกว่งขึ้นลง — ลักษณะ
+// เฉพาะของ leak มากกว่าความแปรผันปกติของ workload เก็บ sample ไม่เกิน
+// WindowSize ต่อ PID ที่กำลัง track อยู่ ทำให้การใช้หน่วยความจำคงที่ไม่ว่า
+// uptime จะนานแค่ไหนก็ตาม
 type Detector struct {
 	cfg     LeakConfig
 	mu      sync.Mutex
@@ -66,8 +67,8 @@ func NewDetector(cfg LeakConfig) *Detector {
 	}
 }
 
-// Observe feeds one snapshot's top-process list in and returns any
-// newly-detected leak candidates.
+// Observe ป้อน top-process list ของ snapshot หนึ่งอันเข้าไป แล้วคืน leak
+// candidate ที่เพิ่งตรวจพบใหม่ (ถ้ามี)
 func (d *Detector) Observe(snap telemetry.Snapshot) []LeakAlert {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -94,8 +95,8 @@ func (d *Detector) Observe(snap telemetry.Snapshot) []LeakAlert {
 		}
 	}
 
-	// Processes that dropped out of the top-N list are no longer tracked —
-	// either they exited or they're no longer a memory concern.
+	// process ที่หลุดออกจาก top-N list จะไม่ track ต่ออีก — อาจจะเพราะ exit
+	// ไปแล้ว หรือไม่น่ากังวลเรื่องหน่วยความจำแล้ว
 	for pid := range d.history {
 		if !seen[pid] {
 			delete(d.history, pid)
@@ -115,7 +116,7 @@ func (d *Detector) evaluate(pid int32, hist []memSample) (LeakAlert, bool) {
 	const noiseToleranceMB = 1.0
 	for i := 1; i < len(hist); i++ {
 		if hist[i].memMB < hist[i-1].memMB-noiseToleranceMB {
-			return LeakAlert{}, false // dipped — not a monotonic leak pattern
+			return LeakAlert{}, false // ลดลง — ไม่ใช่ pattern leak แบบ monotonic
 		}
 	}
 

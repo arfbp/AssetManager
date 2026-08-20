@@ -1,13 +1,12 @@
-// Client-side session storage + auth API calls. Replaces the old static
-// NEXT_PUBLIC_DASHBOARD_TOKEN — the token here comes from a real login
-// (POST /api/auth/login) and is a per-user, revocable, Postgres-backed
-// session (server/src/auth/sessions.ts), not a shared secret baked into the
-// JS bundle at build time.
+// เก็บ session ฝั่ง client + เรียก auth API มาแทนที่ NEXT_PUBLIC_DASHBOARD_TOKEN
+// แบบเดิม — token ที่นี่มาจากการ login จริง (POST /api/auth/login) เป็น
+// session รายผู้ใช้ที่ revoke ได้และเก็บใน Postgres (server/src/auth/sessions.ts)
+// ไม่ใช่ secret ที่ฝังตายตัวอยู่ใน JS bundle ตอน build
 //
-// This is a plain module (not a React hook) so non-component code — api.ts's
-// request(), useDashboardSocket.ts — can read the current token without
-// needing to be passed it through props. src/components/auth/AuthGate.tsx is
-// the one place that turns this into reactive UI state.
+// เป็น plain module ธรรมดา (ไม่ใช่ React hook) เพื่อให้โค้ดที่ไม่ใช่ component —
+// request() ของ api.ts, useDashboardSocket.ts — อ่าน token ปัจจุบันได้โดยไม่
+// ต้องส่งผ่าน props ส่วน src/components/auth/AuthGate.tsx คือที่เดียวที่แปลงค่านี้
+// เป็น reactive UI state
 import type { Role } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -15,6 +14,7 @@ const TOKEN_KEY = "optifleet-session-token";
 const USERNAME_KEY = "optifleet-session-username";
 const ROLE_KEY = "optifleet-session-role";
 const PLATFORM_ADMIN_KEY = "optifleet-session-platform-admin";
+const ORG_ID_KEY = "optifleet-session-org-id";
 const UNAUTHORIZED_EVENT = "optifleet:unauthorized";
 
 export function getToken(): string {
@@ -27,29 +27,39 @@ export function getStoredUsername(): string | null {
   return window.localStorage.getItem(USERNAME_KEY);
 }
 
-// Purely a UX convenience (hiding nav items, disabling buttons a viewer
-// can't use) — never the actual security boundary. Every route this would
-// gate is independently enforced server-side via requireRole, so a stale or
-// tampered value here can make the UI look wrong but can't grant real access.
+// เป็นแค่ความสะดวกด้าน UX (ซ่อนเมนู, ปิดปุ่มที่ viewer ใช้ไม่ได้) — ไม่ใช่ขอบเขต
+// ความปลอดภัยจริง ทุก route ที่ค่านี้จะ gate ถูกบังคับซ้ำฝั่ง server ผ่าน
+// requireRole อยู่แล้ว ดังนั้นค่าที่ค้างหรือถูกแก้ไขตรงนี้ทำได้แค่ให้ UI แสดงผิด
+// แต่ไม่สามารถให้สิทธิ์เข้าถึงจริงได้
 export function getStoredRole(): Role | null {
   if (typeof window === "undefined") return null;
   const value = window.localStorage.getItem(ROLE_KEY);
   return value === "admin" || value === "it_support" || value === "viewer" ? value : null;
 }
 
-// Purely a UX convenience, same caveat as getStoredRole above — gates only
-// whether the "Organizations" nav item renders; POST/GET /orgs are
-// independently enforced server-side by requirePlatformAdmin.
+// เป็นแค่ความสะดวกด้าน UX เช่นเดียวกับ getStoredRole ด้านบน — ใช้ gate แค่ว่าจะ
+// render เมนู "Organizations" หรือไม่; POST/GET /orgs ถูกบังคับซ้ำฝั่ง server
+// โดย requirePlatformAdmin อยู่แล้ว
 export function getStoredIsPlatformAdmin(): boolean {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(PLATFORM_ADMIN_KEY) === "true";
 }
 
-function setSession(token: string, username: string, role: Role, isPlatformAdmin: boolean): void {
+// org ขององค์กรของผู้ใช้คนนี้เอง — ใช้ฝั่ง client สำหรับ action self-service ที่
+// scope แค่ "องค์กรของฉัน" (เช่น การอัปโหลดโลโก้ใน org-settings ที่ยิงไป
+// POST /orgs/:id/logo โดยใช้ค่านี้เป็น :id) มีข้อจำกัดแบบเดียวกับ getStoredRole
+// ด้านบน คือการตรวจสอบสิทธิ์จริงอยู่ฝั่ง server (requireSelfOrPlatformAdmin)
+export function getStoredOrgId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ORG_ID_KEY);
+}
+
+function setSession(token: string, username: string, role: Role, isPlatformAdmin: boolean, orgId: string): void {
   window.localStorage.setItem(TOKEN_KEY, token);
   window.localStorage.setItem(USERNAME_KEY, username);
   window.localStorage.setItem(ROLE_KEY, role);
   window.localStorage.setItem(PLATFORM_ADMIN_KEY, String(isPlatformAdmin));
+  window.localStorage.setItem(ORG_ID_KEY, orgId);
 }
 
 export function clearSession(): void {
@@ -58,11 +68,12 @@ export function clearSession(): void {
   window.localStorage.removeItem(USERNAME_KEY);
   window.localStorage.removeItem(ROLE_KEY);
   window.localStorage.removeItem(PLATFORM_ADMIN_KEY);
+  window.localStorage.removeItem(ORG_ID_KEY);
 }
 
-// api.ts calls this on any 401 so every part of the app finds out a session
-// died (expired, revoked, server restarted with a fresh DB) without needing
-// a direct reference back to whatever triggered the request.
+// api.ts เรียกฟังก์ชันนี้เมื่อเจอ 401 ทุกครั้ง เพื่อให้ทุกส่วนของแอปรู้ว่า session
+// ตายแล้ว (หมดอายุ, ถูก revoke, server รีสตาร์ทด้วย DB ใหม่) โดยไม่ต้องมี
+// reference กลับไปยังจุดที่ยิง request นั้น
 export function notifyUnauthorized(): void {
   clearSession();
   if (typeof window !== "undefined") {
@@ -76,30 +87,30 @@ export function onUnauthorized(handler: () => void): () => void {
   return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler);
 }
 
-// Which org this login belongs to, derived from the browser's own address
-// bar — not a build-time env var, since one shared frontend build serves
-// every org's subdomain (NEXT_PUBLIC_* vars are baked in at build time, so
-// they can't vary per org; see the multi-tenant migration plan). Only
-// load-bearing at login: every request after that carries org identity via
-// the session token itself (server/src/auth/sessions.ts joins it the same
-// way it already joins role), so nowhere else needs this.
+// หา org ที่ login นี้เป็นเจ้าของ โดยอ่านจาก address bar ของ browser เอง — ไม่ใช่
+// env var ที่ตั้งตอน build เพราะ frontend build เดียวถูกเสิร์ฟให้ทุก subdomain
+// ขององค์กร (ตัวแปร NEXT_PUBLIC_* ถูกฝังตอน build จึงไม่สามารถต่างกันไปตามแต่ละ
+// org ได้ ดู migration plan แบบ multi-tenant) ค่านี้มีผลแค่ตอน login เท่านั้น:
+// ทุก request หลังจากนั้นจะพก org identity ไปกับ session token เอง
+// (server/src/auth/sessions.ts join ค่านี้แบบเดียวกับที่ join role อยู่แล้ว)
+// จึงไม่มีที่อื่นที่ต้องใช้ค่านี้อีก
 //
-// Deliberately NOT a "count the dot-separated labels" heuristic — verified
-// live that this breaks against the project's own current hostname,
-// 27-254-142-51.sslip.io, which itself has 3 labels and was being
-// misread as org subdomain "27-254-142-51" (a real login lockout caught
-// during Phase 2 rollout). Matching against the actual org-domain suffix
-// is the only correct check; NEXT_PUBLIC_ORG_DOMAIN_SUFFIX is unset until
-// Phase 6's real domain (e.g. ".optifleet.ai") goes live, so this always
-// falls back to "legacy" until then, matching today's single-tenant reality.
+// ตั้งใจไม่ใช้วิธี heuristic แบบ "นับจำนวน label ที่คั่นด้วยจุด" — เพราะทดสอบจริง
+// แล้วพบว่าวิธีนี้พังกับ hostname ปัจจุบันของโปรเจกต์เอง คือ
+// 27-254-142-51.sslip.io ซึ่งมี 3 label และถูกอ่านผิดเป็น org subdomain
+// "27-254-142-51" (เคยทำให้ login ล็อกจริงระหว่าง rollout Phase 2) การเทียบกับ
+// org-domain suffix จริง ๆ เท่านั้นที่ถูกต้อง; NEXT_PUBLIC_ORG_DOMAIN_SUFFIX
+// จะยังไม่ถูกตั้งค่าจนกว่า domain จริงของ Phase 6 (เช่น ".optifleet.ai") จะ
+// เปิดใช้งาน ดังนั้นตอนนี้จึง fallback เป็น "legacy" เสมอ ตรงกับความเป็น
+// single-tenant ในปัจจุบัน
 //
-// A third case: an org can bring its own fully-owned domain instead of a
-// subdomain under the shared suffix (e.g. assets.360qm.co.th instead of
-// 360qm.27-254-142-51.sslip.io — see migrations/0007_org_custom_domain.sql
-// and orgResolver.ts). Such a hostname matches neither the suffix nor the
-// bare base domain, so it falls through and is sent as-is; the server
-// matches it against organizations.custom_domain instead of .subdomain.
-function currentOrgSubdomain(): string {
+// ยังมีกรณีที่สาม: org สามารถใช้ domain ของตัวเองทั้งเส้นแทน subdomain ภายใต้
+// suffix ที่ใช้ร่วมกันได้ (เช่น assets.360qm.co.th แทนที่จะเป็น
+// 360qm.27-254-142-51.sslip.io — ดู migrations/0007_org_custom_domain.sql
+// และ orgResolver.ts) hostname แบบนี้จะไม่ตรงทั้ง suffix และ base domain
+// เปล่า จึงหลุดผ่านเงื่อนไขและถูกส่งไปตามที่เป็น; ฝั่ง server จะเทียบกับ
+// organizations.custom_domain แทนที่จะเทียบกับ .subdomain
+export function currentOrgSubdomain(): string {
   if (typeof window === "undefined") return "legacy";
   const host = window.location.hostname;
   const suffix = process.env.NEXT_PUBLIC_ORG_DOMAIN_SUFFIX;
@@ -108,13 +119,13 @@ function currentOrgSubdomain(): string {
       const subdomain = host.slice(0, -suffix.length);
       if (subdomain) return subdomain;
     }
-    // The base hostname itself (suffix with its leading dot stripped) is
-    // the pre-multi-tenant legacy fleet's own domain, not a subdomain of it.
+    // base hostname เอง (suffix ที่ตัดจุดนำหน้าออก) คือ domain ของ fleet เก่าก่อน
+    // ยุค multi-tenant ไม่ใช่ subdomain ของมัน
     if (host === suffix.slice(1)) return "legacy";
   }
   if (host === "localhost" || host === "127.0.0.1") {
-    // NEXT_PUBLIC_DEV_ORG_SUBDOMAIN lets a developer testing a second org
-    // locally override this without editing code or needing the real suffix.
+    // NEXT_PUBLIC_DEV_ORG_SUBDOMAIN ให้ dev ที่ทดสอบ org ที่สองบนเครื่อง
+    // local สามารถ override ค่านี้ได้โดยไม่ต้องแก้โค้ดหรือมี suffix จริง
     return process.env.NEXT_PUBLIC_DEV_ORG_SUBDOMAIN ?? "legacy";
   }
   return host;
@@ -130,8 +141,8 @@ export async function login(username: string, password: string): Promise<string>
     const body = await res.json().catch(() => ({}) as { error?: string });
     throw new Error(body.error ?? `login failed with status ${res.status}`);
   }
-  const data = (await res.json()) as { token: string; username: string; role: Role; isPlatformAdmin: boolean };
-  setSession(data.token, data.username, data.role, data.isPlatformAdmin);
+  const data = (await res.json()) as { token: string; username: string; role: Role; isPlatformAdmin: boolean; orgId: string };
+  setSession(data.token, data.username, data.role, data.isPlatformAdmin, data.orgId);
   return data.username;
 }
 
@@ -139,8 +150,8 @@ export async function logout(): Promise<void> {
   const token = getToken();
   clearSession();
   if (!token) return;
-  // Best-effort — the session row is harmless leftover if this fails, and
-  // the client has already forgotten the token either way.
+  // ทำแบบ best-effort — ถ้า call นี้ล้มเหลว session row ที่เหลือค้างไว้ก็ไม่เป็น
+  // อันตราย และฝั่ง client ก็ลืม token ไปแล้วไม่ว่าจะสำเร็จหรือไม่
   await fetch(`${API_URL}/api/auth/logout`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
@@ -150,11 +161,11 @@ export async function logout(): Promise<void> {
 export type SessionCheckResult =
   | { status: "valid"; username: string }
   | { status: "invalid" }
-  | { status: "unknown" }; // couldn't reach the server — not the same as "logged out"
+  | { status: "unknown" }; // ต่อ server ไม่ได้ — คนละกรณีกับ "logout ไปแล้ว"
 
-// Verifies a stored token is still a live session — used once at startup so
-// a stale/expired token from a previous visit doesn't get treated as valid
-// until the first real API call happens to fail.
+// ตรวจสอบว่า token ที่เก็บไว้ยังเป็น session ที่ใช้งานได้อยู่หรือไม่ — เรียกครั้งเดียว
+// ตอน startup เพื่อไม่ให้ token เก่า/หมดอายุจากการเข้าใช้ครั้งก่อนถูกถือว่ายังใช้ได้
+// จนกว่าจะบังเอิญมี API call จริงตัวแรกที่ล้มเหลว
 export async function checkSession(): Promise<SessionCheckResult> {
   const token = getToken();
   if (!token) return { status: "invalid" };
@@ -166,16 +177,17 @@ export async function checkSession(): Promise<SessionCheckResult> {
       clearSession();
       return { status: "invalid" };
     }
-    const data = (await res.json()) as { username: string; role: Role; isPlatformAdmin: boolean };
-    // /auth/me is also how a role change (an admin edited someone else's
-    // role) reaches an already-open tab — refreshed here so the UI's own
-    // stored role doesn't go stale until next login.
+    const data = (await res.json()) as { username: string; role: Role; isPlatformAdmin: boolean; orgId: string };
+    // /auth/me ยังเป็นช่องทางที่การเปลี่ยน role (admin แก้ role ของคนอื่น) จะ
+    // ไปถึง tab ที่เปิดค้างไว้อยู่แล้วด้วย — refresh ตรงนี้เพื่อไม่ให้ role ที่เก็บไว้
+    // ใน UI ค้างเป็นค่าเก่าจนกว่าจะ login ใหม่
     window.localStorage.setItem(ROLE_KEY, data.role);
     window.localStorage.setItem(PLATFORM_ADMIN_KEY, String(data.isPlatformAdmin));
+    window.localStorage.setItem(ORG_ID_KEY, data.orgId);
     return { status: "valid", username: data.username };
   } catch {
-    // Network error, not an auth decision — the caller should fall back to
-    // optimistically trusting the stored session rather than logging out.
+    // เป็น network error ไม่ใช่การตัดสินใจเรื่อง auth — ฝั่งที่เรียกควรถือ session
+    // ที่เก็บไว้ว่ายังใช้ได้ไปก่อนแบบ optimistic แทนที่จะ logout ทันที
     return { status: "unknown" };
   }
 }

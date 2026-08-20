@@ -3,20 +3,17 @@
 @tailwind utilities;
 
 /*
- * Design tokens — a navy/blue Material Design 3-style palette (adopted from
- * a reference mockup the user asked to match visually), applied as VALUES
- * under the project's existing token NAMES rather than introducing a
- * parallel M3 token set — every component already references --accent,
- * --surface-1, --text-primary etc., so this reskins the whole app by
- * changing what those mean, not by renaming things everywhere.
- * Status colors stay fixed — never themed per-series — but their exact
- * hues were nudged to sit in this palette's family (teal-green/red) since
- * matching the reference *is* the themeing decision here.
+ * Design token — ธีมสีโทนกรม/ฟ้าสไตล์ Material Design 3 กำหนดเป็น VALUE
+ * ภายใต้ชื่อ token เดิมของโปรเจกต์ ไม่ได้สร้างชุด token คู่ขนานแยกต่างหาก —
+ * ทุก component อ้างอิง --accent, --surface-1, --text-primary ฯลฯ อยู่แล้ว
+ * ธีมนี้จึงเปลี่ยนหน้าตาทั้งแอปด้วยการเปลี่ยนค่าของ token เหล่านั้น
+ * ไม่ใช่เปลี่ยนชื่อทุกที่
+ * สีสถานะยังคงตายตัวเหมือนเดิม — ไม่เปลี่ยนตามธีม — แต่ปรับเฉดให้เข้ากับ
+ * โทนสีชุดนี้ (teal-green/red)
  *
- * Both light and dark are declared under the media query (OS preference)
- * and the [data-theme] scope (the in-app toggle, src/components/theme) so
- * an explicit user choice always wins over the OS setting in both
- * directions.
+ * ทั้งโหมด light และ dark ประกาศไว้ทั้งใต้ media query (ตาม OS) และใต้
+ * scope [data-theme] (ตัวสลับธีมในแอปเอง, src/components/theme) เพื่อให้
+ * การเลือกเองของผู้ใช้ชนะค่าจาก OS เสมอไม่ว่าจะเลือกทางไหน
  */
 :root {
   color-scheme: light;
@@ -36,8 +33,8 @@
   --status-critical: #ba1a1a;
   --status-offline: #74777e;
 
-  /* Categorical series slots for the history trend chart — fixed order,
-     never cycled/reassigned per filter (see dataviz skill's color-formula.md). */
+  /* ช่องสี categorical สำหรับกราฟแนวโน้มประวัติ — เรียงลำดับตายตัว
+     ไม่หมุนเวียนหรือสลับตาม filter */
   --series-1: #1d4ed8; /* blue */
   --series-2: #eb6834; /* orange */
   --series-3: #009e6d; /* teal-green */
@@ -116,13 +113,11 @@
 }
 
 /*
- * The admin sidebar is a deliberate single-theme element: it stays dark
- * regardless of the light/dark toggle applied to the rest of the app (the
- * same pattern Snipe-IT and most admin panels use) — a fixed dark "frame"
- * around content that itself still fully supports both themes. Not derived
- * from the light/dark token pairs above on purpose. Colors match the
- * reference mockup's sidebar (a deep navy, "primary-container" in its own
- * token dump) rather than the previous neutral charcoal.
+ * แถบเมนูฝั่งแอดมินตั้งใจให้เป็นธีมเดียวคงที่: ยังคงเป็นสีเข้มเสมอไม่ว่าจะ
+ * สลับ light/dark ที่เหลือของแอปแบบไหน (แพตเทิร์นเดียวกับ admin panel
+ * ทั่วไป) — เป็น "กรอบ" สีเข้มคงที่รอบเนื้อหาที่ยังรองรับทั้งสองธีมเต็มรูปแบบ
+ * ตั้งใจไม่ผูกกับคู่ token light/dark ด้านบน สีเป็นโทนกรมเข้ม
+ * ("primary-container")
  */
 :root {
   --sidebar-bg: #0a2540;
@@ -145,20 +140,19 @@ body {
     "wght" 400,
     "GRAD" 0,
     "opsz" 24;
-  /* Icon font glyphs render at their own natural baseline, not text
-     baseline — inline-block + vertical-align keeps them from drifting
-     relative to adjacent label text (a generic Material Symbols quirk,
-     not specific to this app). */
+  /* กลิฟของ icon font render ตาม baseline ธรรมชาติของตัวเอง ไม่ใช่
+     baseline ของข้อความ — inline-block + vertical-align กันไม่ให้เลื่อน
+     หนีจาก label ข้างๆ (ปัญหาทั่วไปของ Material Symbols ไม่ได้เฉพาะเจาะจง
+     กับแอปนี้) */
   display: inline-block;
   vertical-align: middle;
   line-height: 1;
   user-select: none;
 }
 
-/* Reference mockup's "glass-card" treatment — translucent surface + blur +
-   a hairline border + a soft shadow. Opt-in via this class rather than
-   baked into --surface-1 itself, since plain surfaces (menus, inputs)
-   still want an opaque background. */
+/* ลวดลาย "glass-card" — พื้นผิวโปร่งแสง + เบลอ + เส้นขอบบางๆ + เงานุ่มๆ
+   เลือกใช้ผ่าน class นี้แทนที่จะฝังไว้ใน --surface-1 เอง เพราะพื้นผิว
+   ธรรมดา (เมนู, input) ยังต้องการพื้นหลังทึบอยู่ */
 .glass-card {
   background: var(--glass-bg);
   backdrop-filter: blur(10px);
@@ -166,18 +160,16 @@ body {
   box-shadow: 0px 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
-/* Large standalone numbers (stat-tile values) use default proportional
-   figures; only table/column numbers get tabular-nums — see
-   marks-and-anatomy.md. */
+/* ตัวเลขเดี่ยวขนาดใหญ่ (ค่าใน stat-tile) ใช้ proportional figure ตามปกติ
+   มีแค่ตัวเลขในตาราง/คอลัมน์เท่านั้นที่ใช้ tabular-nums */
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* Page headings, table headers, and data-heavy numeric displays (device
-   counts, IDs) — the "precision instrument" typographic accent, paired
-   with Inter for body copy rather than replacing it everywhere. See
-   layout.tsx's IBM Plex Mono <link> and tailwind.config.ts's
-   fontFamily.mono. */
+/* หัวข้อหน้า, หัวตาราง, และตัวเลขที่เน้นข้อมูล (จำนวนอุปกรณ์, ID) — ใช้ฟอนต์
+   เน้นความแม่นยำแบบ monospace คู่กับ Inter สำหรับเนื้อหาทั่วไป ไม่ได้แทนที่
+   ทั้งหมด ดู <link> ของ IBM Plex Mono ใน layout.tsx และ fontFamily.mono ใน
+   tailwind.config.ts */
 .font-display {
   font-family: theme("fontFamily.mono");
   letter-spacing: -0.01em;

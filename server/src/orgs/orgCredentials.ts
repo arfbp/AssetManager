@@ -1,18 +1,20 @@
-// Per-org agent credentials (auth token + HMAC secret), replacing the old
-// single fleet-wide OPTIFLEET_AGENT_AUTH_TOKEN / OPTIFLEET_HMAC_SECRET pair.
-// Warm-started from `organizations` at boot and cached in memory —
-// credential rotation is a rare, deliberate operator action (see
-// migrations/0004's doc comment and the multi-tenant migration plan's Phase
-// 3b), not something that needs same-request freshness the way a role or
-// org change does (validateSession's role/org_id join), so a process-
-// lifetime cache refreshed only on demand (new org created) is the right
-// tradeoff — a DB round-trip per agent heartbeat would be wasteful for
-// something that essentially never changes.
+// agent credential แยกตาม org (auth token + HMAC secret) มาแทนคู่
+// OPTIFLEET_AGENT_AUTH_TOKEN / OPTIFLEET_HMAC_SECRET แบบเดียวทั้ง fleet แบบ
+// เดิม โหลดจากตาราง `organizations` ตอน boot แล้ว cache ไว้ในหน่วยความจำ —
+// การหมุน credential เป็นการกระทำของผู้ควบคุมที่เกิดขึ้นไม่บ่อยและตั้งใจทำ
+// (ดู doc comment ของ migrations/0004 และ Phase 3b ของแผน multi-tenant
+// migration) ไม่ใช่สิ่งที่ต้องการความสดใหม่ระดับ request เดียวกันแบบที่การ
+// เปลี่ยน role หรือ org ต้องการ (การ join role/org_id ของ validateSession)
+// ดังนั้น cache ที่อยู่ตลอดอายุ process แล้ว refresh เฉพาะเมื่อจำเป็น (สร้าง
+// org ใหม่) จึงเป็นทางเลือกที่เหมาะสม — การ round-trip ไปหา DB ทุกครั้งที่
+// agent ส่ง heartbeat จะสิ้นเปลืองโดยใช่เหตุ สำหรับสิ่งที่แทบไม่เปลี่ยนแปลง
+// เลย
 //
-// Also caches orgs' custom domains (organizations.custom_domain, see
-// migrations/0007) for the same reason: index.ts's CORS origin check needs
-// a synchronous, in-memory answer per request, and a custom domain is set
-// even more rarely than a credential is rotated.
+// นอกจากนี้ยัง cache custom domain ของแต่ละ org ด้วย
+// (organizations.custom_domain ดู migrations/0007) ด้วยเหตุผลเดียวกัน: การ
+// ตรวจสอบ CORS origin ใน index.ts ต้องการคำตอบแบบ synchronous ในหน่วยความจำ
+// ต่อ request และ custom domain ยิ่งถูกตั้งค่าน้อยกว่าการหมุน credential
+// เสียอีก
 import type { Pool } from "pg";
 
 export interface OrgCredential {
@@ -22,15 +24,15 @@ export interface OrgCredential {
 
 export class OrgCredentialCache {
   private byToken = new Map<string, OrgCredential>();
-  // Reverse index of the same rows, keyed by orgId — needed wherever a
-  // request is already known to belong to an org (e.g. req.user.orgId after
-  // session validation) and just needs that org's own hmacSecret to sign an
-  // outgoing command, as opposed to byToken's "which org does this agent's
-  // bearer token belong to" direction used at connect time.
+  // ดัชนีย้อนกลับของแถวชุดเดียวกัน คีย์ด้วย orgId — ใช้ในจุดที่รู้อยู่แล้วว่า
+  // request เป็นของ org ไหน (เช่น req.user.orgId หลัง validate session) และ
+  // ต้องการแค่ hmacSecret ของ org นั้นเพื่อเซ็นคำสั่งที่จะส่งออกไป ตรงข้ามกับ
+  // ทิศทางของ byToken ที่ตอบคำถาม "bearer token ของ agent นี้เป็นของ org
+  // ไหน" ซึ่งใช้ตอน connect
   private byOrgId = new Map<string, string>();
-  // Full "https://<domain>" origins, ready for a direct match against the
-  // browser's Origin header — not bare domains, so index.ts doesn't need to
-  // reconstruct the scheme on every request.
+  // origin แบบเต็ม "https://<domain>" พร้อมจับคู่ตรง ๆ กับ Origin header ของ
+  // browser ได้เลย — ไม่ใช่แค่ domain เปล่า ๆ เพื่อไม่ให้ index.ts ต้อง
+  // ประกอบ scheme ขึ้นมาใหม่ทุก request
   private customDomainOrigins = new Set<string>();
 
   static async load(pool: Pool): Promise<OrgCredentialCache> {
@@ -40,10 +42,10 @@ export class OrgCredentialCache {
   }
 
   async reload(pool: Pool): Promise<void> {
-    // status = 'active' — a suspended org's agent token simply stops
-    // resolving here, the same generic rejection every other invalid
-    // token already gets in verifyClient (ws/server.ts). No special-casing
-    // needed anywhere else: this is the one place agent auth is resolved.
+    // status = 'active' — agent token ของ org ที่ถูก suspend จะแค่ resolve
+    // ไม่ได้ตรงนี้เฉย ๆ ได้ผลปฏิเสธทั่วไปแบบเดียวกับ token ที่ไม่ถูกต้องตัวอื่น
+    // ใน verifyClient (ws/server.ts) ไม่ต้อง special-case ที่ไหนอีกเลย: นี่คือ
+    // จุดเดียวที่ resolve agent auth
     const { rows } = await pool.query<{ id: string; agent_auth_token: string; agent_hmac_secret: string }>(
       `SELECT id, agent_auth_token, agent_hmac_secret FROM organizations WHERE agent_auth_token <> '' AND status = 'active'`,
     );

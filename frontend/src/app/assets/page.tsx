@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProcessManagerDrawer } from "@/components/process/ProcessManagerDrawer";
@@ -9,17 +11,68 @@ import { ImportAssetsModal } from "@/components/assets/ImportAssetsModal";
 import { ConnectionHistoryModal } from "@/components/assets/ConnectionHistoryModal";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { StatusBadge } from "@/components/status/StatusBadge";
+import { Button } from "@/components/ui/Button";
 import { useDashboardSocket } from "@/hooks/useDashboardSocket";
-import { getAssets, getFleetLocations, deleteAsset, ApiError } from "@/lib/api";
+import { getAssets, getFleetLocations, deleteAsset, getAssetModels, getCustomFieldLabels, getVendors, getEmployees, ApiError } from "@/lib/api";
 import { getStoredRole } from "@/lib/session";
 import { formatRelativeTime } from "@/lib/format";
-import type { AssetInput, AssetWithLiveInfo, AssetStatus, DeviceInfo, DeviceLocationEntry } from "@/lib/types";
+import { toCsv } from "@/lib/csv";
+import type { AssetInput, AssetWithLiveInfo, AssetStatus, DeviceInfo, DeviceLocationEntry, AssetModel, CustomFieldLabels, Vendor, Employee } from "@/lib/types";
 
-// `ipAddresses` is the device's own LAN-local address list (last_telemetry's
-// ip_addresses — same value the device detail page's network tab shows),
-// distinct from the geolocation below, which resolves the device's public
-// IP instead. Both are "real" — one's just not useful for "where is this
-// physically", the other is.
+// export แบบ fixed-asset-register จริง ๆ — มีทุก field ที่ custodian/auditor
+// ต้องการ (vendor, PO, ข้อมูล depreciation, สถานะ maintenance/license) ไม่ใช่
+// แค่ column ของ device-inventory เดิม ตั้งใจไม่ใส่ disposal เป็น column
+// เพราะมันเป็น record แยกที่มีหน้าของตัวเอง (/asset-retirements) —
+// `Status = retired` คือสัญญาณระดับ register อยู่แล้ว
+function exportAssetsCsv(assets: AssetWithLiveInfo[]): void {
+  const rows: string[][] = [
+    [
+      "Asset Tag", "Status", "Category", "Asset Model", "Manufacturer", "Model", "Serial",
+      "Location", "Checked Out To", "Department", "Vendor", "PO Number", "Purchase Date",
+      "Purchase Cost", "Depreciation Years", "Salvage Value", "Book Value",
+      "Warranty Expiry", "Next Maintenance", "Licenses", "End of Life",
+    ],
+  ];
+  for (const a of assets) {
+    rows.push([
+      a.assetTag,
+      a.status,
+      a.category ?? "",
+      a.assetModelName ?? "",
+      a.manufacturer ?? "",
+      a.model ?? "",
+      a.serialNumber ?? "",
+      a.location ?? "",
+      a.checkedOutTo ?? "",
+      a.checkedOutToDepartment ?? "",
+      a.vendorName ?? "",
+      a.purchaseOrderNumber ?? "",
+      a.purchaseDate ?? "",
+      a.purchaseCost !== null && a.purchaseCost !== undefined ? a.purchaseCost.toFixed(2) : "",
+      a.depreciationYears !== null && a.depreciationYears !== undefined ? String(a.depreciationYears) : "",
+      a.salvageValue !== null && a.salvageValue !== undefined ? a.salvageValue.toFixed(2) : "",
+      a.currentBookValue !== null ? a.currentBookValue.toFixed(2) : "",
+      a.warrantyExpiryDate ?? "",
+      a.nextMaintenanceDate ?? "",
+      String(a.licenseCount),
+      a.eolDate ?? "",
+    ]);
+  }
+  const csv = toCsv(rows);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "optifleet-assets.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// `ipAddresses` คือ list ของ address LAN-local ของ device เอง (มาจาก
+// ip_addresses ใน last_telemetry — ค่าเดียวกับที่ network tab ของหน้า device
+// detail แสดง) คนละอย่างกับ geolocation ด้านล่างที่ resolve จาก public IP
+// ทั้งสองค่า "จริง" ทั้งคู่ แค่ตัวหนึ่งไม่มีประโยชน์กับคำถาม "เครื่องนี้อยู่
+// ที่ไหนจริง ๆ" อีกตัวมี
 function ipLabel(asset: AssetWithLiveInfo): string {
   const ips = asset.ipAddresses ?? [];
   const first = ips[0];
@@ -27,10 +80,10 @@ function ipLabel(asset: AssetWithLiveInfo): string {
   return ips.length > 1 ? `${first} (+${ips.length - 1})` : first;
 }
 
-// City/country by IP geolocation — same source and same honest limits as
-// the Live Tracking page (server/src/geolocation/ipGeo.ts): a private/LAN
-// address can never resolve to a location at all, and even a real public IP
-// only resolves to roughly the ISP's regional point, not a precise address.
+// City/country จาก IP geolocation — ใช้ source เดียวกันและมีข้อจำกัดเดียวกัน
+// กับหน้า Live Tracking (server/src/geolocation/ipGeo.ts): address แบบ
+// private/LAN resolve เป็นตำแหน่งไม่ได้เลย และแม้แต่ public IP จริง ๆ
+// ก็ได้แค่พิกัดโซนของ ISP คร่าว ๆ ไม่ใช่ตำแหน่งที่แม่นยำ
 function geoLabel(loc: DeviceLocationEntry | undefined): string {
   if (!loc) return "—";
   if (loc.isPrivate) return "Private network";
@@ -38,10 +91,10 @@ function geoLabel(loc: DeviceLocationEntry | undefined): string {
   return place || "—";
 }
 
-// One chip per physical drive — "224 GB SSD", "1863 GB HDD" — same spec
-// data the device drawer's "Specs" panel shows, just condensed for a table
-// cell. "Unknown" media type (the OS didn't report SSD vs HDD reliably)
-// still shows the size rather than being hidden entirely.
+// หนึ่ง chip ต่อหนึ่ง physical drive — "224 GB SSD", "1863 GB HDD" — ข้อมูล
+// spec ชุดเดียวกับที่ panel "Specs" ใน device drawer แสดง แค่ย่อให้พอดีกับ
+// table cell media type ที่เป็น "Unknown" (OS รายงาน SSD/HDD ไม่ชัดเจน)
+// ก็ยังโชว์ขนาดอยู่ ไม่ซ่อนไปเลย
 function storageLabel(asset: AssetWithLiveInfo): string {
   const disks = asset.physicalDisks ?? [];
   if (disks.length === 0) return "—";
@@ -55,12 +108,12 @@ const STATUS_LABEL: Record<AssetStatus, string> = {
   retired: "Retired",
 };
 
-// Only ever shown for a "peripheral" asset's "Linked device" cell.
-// lastConnectionAgentId null means it's never actually been seen
-// connecting to anything (a manually-set parentAgentId at registration
-// doesn't count on its own) — "if it's never connected, don't show
-// anything". Otherwise distinguishes "still connected right now" from
-// "was connected, here's when" rather than always reading as present-tense.
+// แสดงเฉพาะใน cell "Linked device" ของ asset ประเภท "peripheral" เท่านั้น
+// lastConnectionAgentId เป็น null แปลว่ายังไม่เคยเห็นมันเชื่อมต่อกับอะไรเลย
+// จริง ๆ (การตั้ง parentAgentId ตอน register ด้วยมือไม่นับ) — "ถ้าไม่เคย
+// connect ก็ไม่ต้องโชว์อะไร" ส่วนกรณีอื่นจะแยกให้ชัดระหว่าง "connect อยู่
+// ตอนนี้" กับ "เคย connect ไว้เมื่อไหร่" แทนที่จะอ่านเป็น present-tense
+// ตลอด
 function ConnectionSummary({ asset }: { asset: AssetWithLiveInfo }) {
   if (!asset.lastConnectionAgentId || !asset.lastConnectedAt) {
     return <span className="text-ink-muted">—</span>;
@@ -75,19 +128,77 @@ function ConnectionSummary({ asset }: { asset: AssetWithLiveInfo }) {
   );
 }
 
+// book value แบบ straight-line คำนวณฝั่ง server (assets/depreciation.ts) —
+// เป็น null เมื่อ purchaseCost/purchaseDate/depreciationYears ไม่ครบทั้งสาม
+// ค่า ใช้แนวทางเดียวกับ column optional อื่น ๆ ในหน้านี้คือโชว์แค่ขีดกลาง
+// ไม่ใช่ error
+function bookValueLabel(asset: AssetWithLiveInfo): string {
+  return asset.currentBookValue === null ? "—" : `$${asset.currentBookValue.toFixed(2)}`;
+}
+
+// เป็นสีแดงเมื่อ maintenance record ที่กำหนดไว้เร็วที่สุดเลยกำหนดแล้ว —
+// ใช้แนวทางเดียวกับ maintenanceStore.ts คือ derive overdue จากวันที่ปัจจุบัน
+// ไม่เก็บเป็น flag แยก title มีตัวนับ open count ติดไปด้วยเลยไม่ต้องมี
+// column แยกสำหรับ "3 scheduled"
+function MaintenanceDueCell({ asset }: { asset: AssetWithLiveInfo }) {
+  if (!asset.nextMaintenanceDate) return <span className="text-ink-muted">—</span>;
+  const overdue = asset.nextMaintenanceDate.slice(0, 10) < new Date().toISOString().slice(0, 10);
+  return (
+    <span className={overdue ? "text-status-critical" : "text-ink-secondary"} title={`${asset.openMaintenanceCount} scheduled`}>
+      {asset.nextMaintenanceDate.slice(0, 10)}
+    </span>
+  );
+}
+
+// "Checked out to" พร้อม contact field เสริมสองอย่าง — email/department
+// จะ render เป็นตัวหนังสือ muted รองใต้ชื่อ ใช้ style เดียวกับ metadata
+// รองอื่น ๆ ในหน้านี้ (เช่น relative time ของ ConnectionSummary) ไม่ใช่
+// pattern ใหม่
+// เลือกใช้ชื่อจาก live directory (checkedOutToEmployeeName) ก่อน snapshot
+// ณ เวลานั้น (checkedOutTo) เมื่อมีทั้งคู่ — ถ้า rename ใน directory จะ
+// เห็นผลใน list นี้ทันที แต่ snapshot เองจะ freeze ไว้เพื่อประวัติ/การพิมพ์
+// จะ link ไปหน้า employee ก็ต่อเมื่อมี directory link จริงเท่านั้น
+function CheckoutCell({ asset }: { asset: AssetWithLiveInfo }) {
+  const name = asset.checkedOutToEmployeeName ?? asset.checkedOutTo;
+  if (!name) return <span className="text-ink-secondary">—</span>;
+  const contact = [asset.checkedOutToEmail, asset.checkedOutToDepartment].filter(Boolean).join(" · ");
+  return (
+    <div>
+      {asset.checkedOutToEmployeeId ? (
+        <Link href={`/employees/${asset.checkedOutToEmployeeId}`} className="text-ink-secondary hover:underline">
+          {name}
+        </Link>
+      ) : (
+        <p className="text-ink-secondary">{name}</p>
+      )}
+      {contact && <p className="text-xs text-ink-muted">{contact}</p>}
+    </div>
+  );
+}
+
 function AssetsPage({ username }: { username: string }) {
-  // A viewer's write attempts are already rejected server-side with a clear
-  // message (every save/delete path here catches ApiError and shows it
-  // inline) — this just avoids presenting a button that's known in advance
-  // to always fail, not a security boundary of its own.
+  // ฝั่ง server ปฏิเสธการเขียนของ viewer พร้อม message ชัดเจนอยู่แล้ว
+  // (ทุก path save/delete ในนี้ catch ApiError แล้วโชว์ inline) การซ่อนปุ่มนี้
+  // แค่ป้องกันไม่ให้แสดงปุ่มที่รู้อยู่แล้วว่าจะ fail แน่ ๆ ไม่ใช่ security
+  // boundary จริงจัง
   const canWrite = getStoredRole() !== "viewer";
+  const router = useRouter();
   const { agents, history, commandOutputs, connectionStatus } = useDashboardSocket();
   const [assets, setAssets] = useState<AssetWithLiveInfo[]>([]);
   const [unregisteredAgents, setUnregisteredAgents] = useState<string[]>([]);
   const [locations, setLocations] = useState<DeviceLocationEntry[]>([]);
+  const [assetModels, setAssetModels] = useState<AssetModel[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [customFieldLabels, setCustomFieldLabels] = useState<CustomFieldLabels | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [requestableOnly, setRequestableOnly] = useState(false);
+  const [maintenanceDueOnly, setMaintenanceDueOnly] = useState(false);
+  const [vendorFilter, setVendorFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [scanValue, setScanValue] = useState("");
   const [editing, setEditing] = useState<AssetWithLiveInfo | "new" | null>(null);
   const [prefill, setPrefill] = useState<AssetInput | undefined>(undefined);
   const [showImport, setShowImport] = useState(false);
@@ -95,8 +206,8 @@ function AssetsPage({ username }: { username: string }) {
   const [deleteTarget, setDeleteTarget] = useState<AssetWithLiveInfo | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Which "computer" assets are expanded to show their linked peripherals
-  // (monitors, etc.) nested underneath — keyed by asset tag.
+  // asset ประเภท "computer" ตัวไหนที่ขยายไว้เพื่อโชว์ peripheral ที่เชื่อมอยู่
+  // (จอมอนิเตอร์ ฯลฯ) ซ้อนอยู่ข้างล่าง — key ด้วย asset tag
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
   const [historyTarget, setHistoryTarget] = useState<string | null>(null);
 
@@ -140,8 +251,36 @@ function AssetsPage({ username }: { username: string }) {
   useEffect(() => {
     getFleetLocations()
       .then((res) => setLocations(res.devices))
-      .catch(() => setLocations([])); // best-effort — asset rows just show "—" for city/country
+      .catch(() => setLocations([])); // best-effort — ถ้าพลาดแถว asset จะโชว์ "—" สำหรับ city/country
   }, []);
+
+  useEffect(() => {
+    getAssetModels()
+      .then((res) => setAssetModels(res.assetModels))
+      .catch(() => setAssetModels([]));
+    getCustomFieldLabels()
+      .then((res) => setCustomFieldLabels(res.labels))
+      .catch(() => setCustomFieldLabels(undefined));
+    getVendors()
+      .then((res) => setVendors(res.vendors))
+      .catch(() => setVendors([]));
+    getEmployees()
+      .then((res) => setEmployees(res.employees))
+      .catch(() => setEmployees([]));
+  }, []);
+
+  // เครื่องสแกนบาร์โค้ดแบบมือถือจะพิมพ์ text ที่สแกนได้เข้า input ที่ focus
+  // อยู่แล้วกด Enter ให้เอง — input นี้คือ "barcode scanner integration"
+  // ทั้งหมด: เล็ง scanner มาที่ field นี้ สแกน แล้วมันจะพาไปหน้า detail ของ
+  // asset นั้นทันที พิมพ์ asset tag เองแล้วกด Enter ก็ทำงานเหมือนกันทุก
+  // ประการ
+  function handleScanSubmit(e: React.FormEvent): void {
+    e.preventDefault();
+    const tag = scanValue.trim();
+    if (!tag) return;
+    setScanValue("");
+    router.push(`/assets/${encodeURIComponent(tag)}`);
+  }
 
   const locationByAgentId = new Map(locations.map((l) => [l.agentId, l]));
 
@@ -161,6 +300,10 @@ function AssetsPage({ username }: { username: string }) {
   }
 
   const filtered = assets.filter((a) => {
+    if (requestableOnly && !a.isRequestable) return false;
+    if (maintenanceDueOnly && !a.nextMaintenanceDate) return false;
+    if (vendorFilter && a.vendorId !== vendorFilter) return false;
+    if (modelFilter && a.assetModelId !== modelFilter) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -171,19 +314,23 @@ function AssetsPage({ username }: { username: string }) {
       (a.model ?? "").toLowerCase().includes(q) ||
       (a.location ?? "").toLowerCase().includes(q) ||
       (a.category ?? "").toLowerCase().includes(q) ||
-      (a.checkedOutTo ?? "").toLowerCase().includes(q)
+      (a.checkedOutTo ?? "").toLowerCase().includes(q) ||
+      (a.checkedOutToEmployeeName ?? "").toLowerCase().includes(q) ||
+      (a.vendorName ?? "").toLowerCase().includes(q) ||
+      (a.assetModelName ?? "").toLowerCase().includes(q) ||
+      (a.purchaseOrderNumber ?? "").toLowerCase().includes(q)
     );
   });
 
   const viewingAgent = agents.find((a) => a.agentId === viewingDevicesFor) ?? null;
 
-  // "computer" assets (linked to an agent_id) each get their linked
-  // "peripheral" assets (a monitor registered with its own SN, say) nested
-  // underneath them, expandable via a +/- toggle — a peripheral's
-  // parentAgentId records which computer it was connected through at
-  // registration time. Peripherals whose parent isn't (or is no longer) a
-  // registered computer asset still need to show up somewhere, so they fall
-  // back to their own top-level row instead of silently disappearing.
+  // asset ประเภท "computer" (เชื่อมกับ agent_id) แต่ละตัวจะมี asset ประเภท
+  // "peripheral" (เช่นจอมอนิเตอร์ที่ register ด้วย SN ของตัวเอง) ซ้อนอยู่
+  // ข้างล่าง เปิด/ปิดได้ด้วยปุ่ม +/- — parentAgentId ของ peripheral บันทึกไว้
+  // ว่าตอน register เชื่อมกับ computer ตัวไหน ส่วน peripheral ที่ parent
+  // ไม่ใช่ (หรือไม่ใช่แล้ว) computer asset ที่ register ไว้ ก็ยังต้องโชว์อยู่
+  // ที่ไหนสักที่ เลย fallback กลับไปเป็นแถว top-level ของตัวเองแทนที่จะ
+  // หายไปเงียบ ๆ
   const computerAssets = filtered.filter((a) => a.assetType !== "peripheral");
   const peripheralAssets = filtered.filter((a) => a.assetType === "peripheral");
   const computerAgentIds = new Set(computerAssets.map((c) => c.agentId).filter((id): id is string => Boolean(id)));
@@ -196,10 +343,10 @@ function AssetsPage({ username }: { username: string }) {
     childrenByParent.set(p.parentAgentId, list);
   }
 
-  // Fed into ProcessManagerDrawer's "Connected devices" list so it can hide
-  // "+ Add as asset" for a device that already has an asset record — built
-  // from the full (unfiltered) list, not `filtered`, so typing in the
-  // search box never makes an already-registered device's button reappear.
+  // ส่งเข้า list "Connected devices" ของ ProcessManagerDrawer เพื่อซ่อนปุ่ม
+  // "+ Add as asset" สำหรับ device ที่มี asset record อยู่แล้ว — สร้างจาก
+  // list เต็ม (ไม่ filter) ไม่ใช่ `filtered` เพื่อไม่ให้พิมพ์ในช่องค้นหาแล้ว
+  // ปุ่มของ device ที่ register ไปแล้วโผล่กลับมา
   const registeredSerials = new Set(assets.map((a) => a.serialNumber).filter((s): s is string => Boolean(s)));
 
   return (
@@ -214,21 +361,90 @@ function AssetsPage({ username }: { username: string }) {
       }
     >
       <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold text-ink-primary">Asset Registry</h1>
-        <p className="text-xs text-ink-muted">Inventory records, linked to live device data where available.</p>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-ink-primary">Asset Registry</h1>
+          <p className="text-xs text-ink-muted">Inventory records, linked to live device data where available.</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Total fleet book value</p>
+          <p className="text-lg font-bold text-ink-primary">
+            ${assets.reduce((sum, a) => sum + (a.currentBookValue ?? 0), 0).toFixed(2)}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-3">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search asset tag, device, serial, model, location…"
-          className="w-full max-w-sm rounded-md border border-border bg-page px-3 py-1.5 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search asset tag, device, serial, model, location…"
+            className="w-full max-w-sm rounded-md border border-border bg-page px-3 py-1.5 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent"
+          />
+          <form onSubmit={handleScanSubmit}>
+            <input
+              value={scanValue}
+              onChange={(e) => setScanValue(e.target.value)}
+              placeholder="Scan or enter asset tag…"
+              className="w-56 rounded-md border border-border bg-page px-3 py-1.5 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent"
+            />
+          </form>
+          <button
+            type="button"
+            onClick={() => setRequestableOnly((v) => !v)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              requestableOnly ? "border-accent bg-accent/10 text-accent" : "border-border text-ink-secondary hover:bg-gridline/40"
+            }`}
+          >
+            Requestable only
+          </button>
+          <button
+            type="button"
+            onClick={() => setMaintenanceDueOnly((v) => !v)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              maintenanceDueOnly ? "border-accent bg-accent/10 text-accent" : "border-border text-ink-secondary hover:bg-gridline/40"
+            }`}
+          >
+            Maintenance due
+          </button>
+          {vendors.length > 0 && (
+            <select
+              value={vendorFilter}
+              onChange={(e) => setVendorFilter(e.target.value)}
+              className="rounded-md border border-border bg-page px-3 py-1.5 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">All vendors</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {assetModels.length > 0 && (
+            <select
+              value={modelFilter}
+              onChange={(e) => setModelFilter(e.target.value)}
+              className="rounded-md border border-border bg-page px-3 py-1.5 text-sm text-ink-primary outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">All models</option>
+              {assetModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {unregisteredAgents.length > 0 && (
             <span className="text-xs text-ink-muted">{unregisteredAgents.length} connected device(s) not yet registered</span>
+          )}
+          {assets.length > 0 && (
+            <Button variant="secondary" icon="download" onClick={() => exportAssetsCsv(filtered)}>
+              Export CSV
+            </Button>
           )}
           {canWrite && (
             <button
@@ -255,7 +471,7 @@ function AssetsPage({ username }: { username: string }) {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        <table className="w-full min-w-[1750px] text-left text-sm">
+        <table className="w-full min-w-[2400px] text-left text-sm">
           <thead>
             <tr className="border-b border-border text-xs uppercase tracking-wide text-ink-muted">
               <th className="px-4 py-3 font-medium">Asset tag</th>
@@ -264,6 +480,7 @@ function AssetsPage({ username }: { username: string }) {
               <th className="px-4 py-3 font-medium">Serial</th>
               <th className="px-4 py-3 font-medium">Manufacturer</th>
               <th className="px-4 py-3 font-medium">Model</th>
+              <th className="px-4 py-3 font-medium">Asset model</th>
               <th className="px-4 py-3 font-medium">CPU</th>
               <th className="px-4 py-3 font-medium">Storage</th>
               <th className="px-4 py-3 font-medium">IP address</th>
@@ -271,26 +488,32 @@ function AssetsPage({ username }: { username: string }) {
               <th className="px-4 py-3 font-medium">Location</th>
               <th className="px-4 py-3 font-medium">Category</th>
               <th className="px-4 py-3 font-medium">Checked out to</th>
+              <th className="px-4 py-3 font-medium">Vendor</th>
+              <th className="px-4 py-3 font-medium">PO</th>
+              <th className="px-4 py-3 font-medium">Maintenance due</th>
+              <th className="px-4 py-3 font-medium">Licenses</th>
               <th className="px-4 py-3 font-medium">End of life</th>
+              <th className="px-4 py-3 font-medium">Warranty</th>
+              <th className="px-4 py-3 font-medium">Book value</th>
               <th className="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={15} className="px-4 py-6 text-center text-ink-muted">
+                <td colSpan={22} className="px-4 py-6 text-center text-ink-muted">
                   Loading…
                 </td>
               </tr>
             ) : error ? (
               <tr>
-                <td colSpan={15} className="px-4 py-6 text-center text-status-critical">
+                <td colSpan={22} className="px-4 py-6 text-center text-status-critical">
                   {error}
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={15} className="px-4 py-6 text-center text-ink-muted">
+                <td colSpan={22} className="px-4 py-6 text-center text-ink-muted">
                   No assets registered yet.
                 </td>
               </tr>
@@ -314,7 +537,22 @@ function AssetsPage({ username }: { username: string }) {
                         ) : (
                           <span className="inline-block w-4 shrink-0" />
                         )}
-                        {asset.assetTag}
+                        <Link href={`/assets/${encodeURIComponent(asset.assetTag)}`} className="hover:underline">
+                          {asset.assetTag}
+                        </Link>
+                        {asset.isRequestable && (
+                          <span className="material-symbols-outlined text-[14px] text-accent" title="Requestable">
+                            pan_tool
+                          </span>
+                        )}
+                        {asset.pendingRequestCount > 0 && (
+                          <span
+                            className="material-symbols-outlined text-[14px] text-status-warning"
+                            title={`${asset.pendingRequestCount} pending request(s)`}
+                          >
+                            pending_actions
+                          </span>
+                        )}
                         {children.length > 0 && (
                           <span className="text-[11px] font-normal text-ink-muted">
                             ({children.length} peripheral{children.length === 1 ? "" : "s"})
@@ -339,6 +577,7 @@ function AssetsPage({ username }: { username: string }) {
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.serialNumber || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.manufacturer || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.model || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.assetModelName || "—"}</td>
                     <td className="max-w-[220px] truncate px-4 py-3 text-ink-secondary" title={asset.cpuModel || undefined}>
                       {asset.cpuModel || "—"}
                     </td>
@@ -349,8 +588,22 @@ function AssetsPage({ username }: { username: string }) {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.location || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.category || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.checkedOutTo || "—"}</td>
+                    <td className="px-4 py-3 text-sm"><CheckoutCell asset={asset} /></td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.vendorName || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                      {asset.purchaseOrderNumber ? (
+                        <Link href="/purchase-orders" className="hover:underline">
+                          {asset.purchaseOrderNumber}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm"><MaintenanceDueCell asset={asset} /></td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.licenseCount || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.eolDate ? asset.eolDate.slice(0, 10) : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.warrantyExpiryDate ? asset.warrantyExpiryDate.slice(0, 10) : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{bookValueLabel(asset)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex gap-1.5">
                         {asset.agentId && (
@@ -391,7 +644,10 @@ function AssetsPage({ username }: { username: string }) {
                     rows.push(
                       <tr key={child.assetTag} className="border-b border-border bg-page/60 last:border-0">
                         <td className="whitespace-nowrap px-4 py-2 pl-10 text-ink-secondary">
-                          <span className="text-ink-muted">↳</span> {child.assetTag}
+                          <span className="text-ink-muted">↳</span>{" "}
+                          <Link href={`/assets/${encodeURIComponent(child.assetTag)}`} className="hover:underline">
+                            {child.assetTag}
+                          </Link>
                         </td>
                         <td className="whitespace-nowrap px-4 py-2">
                           <span className="rounded-full border border-border px-2 py-0.5 text-xs text-ink-secondary">
@@ -404,15 +660,30 @@ function AssetsPage({ username }: { username: string }) {
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.serialNumber || "—"}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.manufacturer || "—"}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.model || "—"}</td>
-                        {/* A peripheral has no CPU/storage/network identity of its own — these only ever apply to the computer it's plugged into. */}
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.assetModelName || "—"}</td>
+                        {/* peripheral ไม่มี CPU/storage/network เป็นของตัวเอง — ค่าพวกนี้ใช้ได้กับ computer ที่มันเสียบอยู่เท่านั้น */}
                         <td className="whitespace-nowrap px-4 py-2 text-ink-muted">—</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-muted">—</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-muted">—</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-muted">—</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.location || "—"}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.category || "—"}</td>
-                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.checkedOutTo || "—"}</td>
+                        <td className="px-4 py-2 text-sm"><CheckoutCell asset={child} /></td>
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.vendorName || "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">
+                          {child.purchaseOrderNumber ? (
+                            <Link href="/purchase-orders" className="hover:underline">
+                              {child.purchaseOrderNumber}
+                            </Link>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-sm"><MaintenanceDueCell asset={child} /></td>
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.licenseCount || "—"}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.eolDate ? child.eolDate.slice(0, 10) : "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{child.warrantyExpiryDate ? child.warrantyExpiryDate.slice(0, 10) : "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2 text-ink-secondary">{bookValueLabel(child)}</td>
                         <td className="whitespace-nowrap px-4 py-2">
                           <div className="flex gap-1.5">
                             <button
@@ -453,13 +724,17 @@ function AssetsPage({ username }: { username: string }) {
             {!loading && !error && filtered.length > 0 && orphanPeripherals.length > 0 && (
               <>
                 <tr className="border-b border-border">
-                  <td colSpan={15} className="bg-page/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  <td colSpan={22} className="bg-page/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                     Peripherals not linked to a registered computer asset
                   </td>
                 </tr>
                 {orphanPeripherals.map((asset) => (
                   <tr key={asset.assetTag} className="border-b border-border last:border-0">
-                    <td className="whitespace-nowrap px-4 py-3 font-medium text-ink-primary">{asset.assetTag}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-ink-primary">
+                      <Link href={`/assets/${encodeURIComponent(asset.assetTag)}`} className="hover:underline">
+                        {asset.assetTag}
+                      </Link>
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <span className="rounded-full border border-border px-2 py-0.5 text-xs text-ink-secondary">
                         {STATUS_LABEL[asset.status]}
@@ -482,14 +757,29 @@ function AssetsPage({ username }: { username: string }) {
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.serialNumber || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.manufacturer || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.model || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.assetModelName || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-muted">—</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-muted">—</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-muted">—</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-muted">—</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.location || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.category || "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.checkedOutTo || "—"}</td>
+                    <td className="px-4 py-3 text-sm"><CheckoutCell asset={asset} /></td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.vendorName || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">
+                      {asset.purchaseOrderNumber ? (
+                        <Link href="/purchase-orders" className="hover:underline">
+                          {asset.purchaseOrderNumber}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm"><MaintenanceDueCell asset={asset} /></td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.licenseCount || "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.eolDate ? asset.eolDate.slice(0, 10) : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{asset.warrantyExpiryDate ? asset.warrantyExpiryDate.slice(0, 10) : "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-ink-secondary">{bookValueLabel(asset)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex gap-1.5">
                         <button
@@ -532,6 +822,11 @@ function AssetsPage({ username }: { username: string }) {
           editing={editing === "new" ? null : editing}
           prefill={editing === "new" ? prefill : undefined}
           unregisteredAgents={unregisteredAgents}
+          knownCheckoutNames={Array.from(new Set(assets.map((a) => a.checkedOutTo).filter((n): n is string => !!n)))}
+          assetModels={assetModels}
+          vendors={vendors}
+          employees={employees}
+          customFieldLabels={customFieldLabels}
           onClose={() => {
             setEditing(null);
             setPrefill(undefined);

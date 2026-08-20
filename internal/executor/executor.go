@@ -1,7 +1,8 @@
-// Package executor turns authenticated server commands into local actions.
-// Every command is (1) signature-verified, (2) checked against an explicit
-// allowlist, (3) executed with action-specific safety checks, and (4)
-// audit-logged regardless of outcome — accepted, rejected, or failed.
+// Package executor แปลงคำสั่งจาก server ที่ authenticate แล้วให้กลายเป็น
+// action ในเครื่อง ทุกคำสั่งจะถูก (1) ตรวจสอบ signature, (2) เช็คกับ
+// allowlist ที่กำหนดไว้ชัดเจน, (3) รันด้วย safety check เฉพาะของแต่ละ
+// action, และ (4) audit-log ไม่ว่าผลจะออกมาแบบไหน — accepted, rejected,
+// หรือ failed
 package executor
 
 import (
@@ -25,8 +26,9 @@ import (
 	"optifleet-agent/internal/transport"
 )
 
-// protectedProcessNames must never be killed remotely — killing them can
-// crash or lock out the host, defeating the point of a management agent.
+// protectedProcessNames ห้าม kill จากระยะไกลเด็ดขาด — ถ้า kill พวกนี้เข้า
+// อาจทำให้เครื่อง crash หรือเข้าเครื่องไม่ได้อีก ซึ่งขัดกับจุดประสงค์ของ
+// management agent เอง
 var protectedProcessNames = map[string]struct{}{
 	"system":       {},
 	"csrss.exe":    {},
@@ -47,14 +49,15 @@ type Config struct {
 	CleanTempAllowedDirs []string
 	RestartConfirmDelay  time.Duration
 
-	// run_script is the highest-risk action this agent exposes: it executes
-	// server-supplied script content verbatim (as SYSTEM/root, no interactive
-	// window). It is only reachable if "run_script" is explicitly present in
-	// AllowedActions — off by default in configs/agent.yaml. These bounds
-	// apply even when enabled; they cannot be disabled, only tightened.
-	ScriptTimeout        time.Duration // hard kill if the script runs longer than this
-	MaxScriptBytes       int           // reject script bodies larger than this
-	MaxScriptOutputBytes int           // stdout+stderr captured/audited per run, truncated beyond this
+	// run_script คือ action ที่เสี่ยงที่สุดที่ agent นี้เปิดให้ใช้: มันรัน
+	// เนื้อหาสคริปต์ที่ server ส่งมาตรง ๆ (เป็น SYSTEM/root ไม่มีหน้าต่าง
+	// interactive) จะเรียกใช้ได้ก็ต่อเมื่อ "run_script" มีอยู่ใน
+	// AllowedActions อย่างชัดเจนเท่านั้น — ปิดไว้เป็น default ใน
+	// configs/agent.yaml ขอบเขตพวกนี้บังคับใช้เสมอแม้เปิดใช้งานแล้ว จะปิดไม่
+	// ได้ ทำได้แค่บีบให้แคบลง
+	ScriptTimeout        time.Duration // kill ทันทีถ้าสคริปต์รันนานเกินนี้
+	MaxScriptBytes       int           // ปฏิเสธ script body ที่ใหญ่กว่านี้
+	MaxScriptOutputBytes int           // stdout+stderr ที่เก็บ/audit ต่อการรันหนึ่งครั้ง ตัดทิ้งถ้าเกินนี้
 }
 
 type Executor struct {
@@ -62,27 +65,28 @@ type Executor struct {
 	log   zerolog.Logger
 	audit zerolog.Logger
 
-	// Set via SetOutputSender after construction — main.go wires this to
-	// transport.Client.SendCommandOutput once the client exists, which is
-	// itself constructed *after* the executor (the client's own constructor
-	// needs Executor.Handle as an argument), so this can't be a constructor
-	// parameter without a circular dependency between the two.
+	// set ผ่าน SetOutputSender หลังสร้าง object แล้ว — main.go ต่อสายอันนี้
+	// เข้ากับ transport.Client.SendCommandOutput เมื่อ client ถูกสร้างแล้ว
+	// ซึ่ง client เองก็ถูกสร้าง *หลัง* executor (constructor ของ client เอง
+	// ต้องใช้ Executor.Handle เป็น argument) จึงทำเป็น constructor
+	// parameter ตรง ๆ ไม่ได้ ไม่งั้นจะเกิด circular dependency ระหว่างสอง
+	// ตัวนี้
 	sendOutput func(commandID, line string, done bool, errMsg string)
 
-	// Set via SetStateChangeNotifier — same deferred-wiring reason as
-	// sendOutput (the poller is constructed after the executor). Fired after
-	// a command in stateChangingActions succeeds, so the dashboard's process
-	// list reflects a kill immediately instead of waiting up to
-	// NormalInterval (minutes) for the next scheduled snapshot.
+	// set ผ่าน SetStateChangeNotifier — เหตุผลเรื่อง deferred-wiring
+	// เดียวกับ sendOutput (poller ถูกสร้างหลัง executor) จะถูกเรียกหลังคำสั่ง
+	// ใน stateChangingActions สำเร็จ เพื่อให้รายการ process บน dashboard
+	// สะท้อนการ kill ทันที แทนที่จะรอ snapshot รอบถัดไปตาม NormalInterval
+	// (เป็นนาที)
 	notifyStateChanged func()
 }
 
-// stateChangingActions are commands whose success visibly changes what the
-// *next* telemetry snapshot would show — kill_process removes a row from
-// top_processes, clean_temp changes disk free space. restart_host and
-// run_script are deliberately excluded: a reboot has no "next snapshot" to
-// rush (the host is going down), and run_script's effects are open-ended,
-// not something a generic refresh is targeting.
+// stateChangingActions คือคำสั่งที่สำเร็จแล้วเปลี่ยนสิ่งที่ telemetry
+// snapshot *รอบถัดไป* จะแสดงอย่างเห็นได้ชัด — kill_process ลบแถวออกจาก
+// top_processes, clean_temp เปลี่ยนพื้นที่ว่างของดิสก์ ส่วน restart_host กับ
+// run_script ตั้งใจไม่รวมไว้: reboot ไม่มี "snapshot รอบถัดไป" ให้เร่งอยู่
+// แล้ว (เครื่องกำลังจะดับ) ส่วนผลของ run_script นั้นเปิดกว้างเกินกว่าที่การ
+// refresh แบบทั่วไปจะเล็งเป้าได้
 var stateChangingActions = map[string]struct{}{
 	"kill_process": {},
 	"clean_temp":   {},
@@ -92,27 +96,27 @@ func New(cfg Config, log, audit zerolog.Logger) *Executor {
 	return &Executor{cfg: cfg, log: log.With().Str("component", "executor").Logger(), audit: audit}
 }
 
-// SetOutputSender wires up streaming output for long-running commands
-// (network_diagnostic) — see the Executor.sendOutput field comment. Safe to
-// leave unset (e.g. in tests): networkDiagnostic just skips the incremental
-// sends and the caller only sees the final aggregated CommandResultPayload.
+// SetOutputSender ต่อสาย streaming output สำหรับคำสั่งที่รันนาน
+// (network_diagnostic) — ดู field comment ของ Executor.sendOutput ไม่ set
+// ก็ปลอดภัย (เช่นตอน test): networkDiagnostic แค่ข้ามการส่งแบบ incremental
+// ไป แล้ว caller จะเห็นแค่ CommandResultPayload สรุปตอนจบเท่านั้น
 func (e *Executor) SetOutputSender(fn func(commandID, line string, done bool, errMsg string)) {
 	e.sendOutput = fn
 }
 
-// SetStateChangeNotifier wires the out-of-cycle telemetry refresh — see the
-// notifyStateChanged field comment. Safe to leave unset (e.g. in tests): the
-// dashboard just falls back to seeing the change on the next scheduled poll.
+// SetStateChangeNotifier ต่อสายการ refresh telemetry นอกรอบปกติ — ดู field
+// comment ของ notifyStateChanged ไม่ set ก็ปลอดภัย (เช่นตอน test):
+// dashboard จะกลับไปเห็นการเปลี่ยนแปลงในรอบ poll ถัดไปตามปกติแทน
 func (e *Executor) SetStateChangeNotifier(fn func()) {
 	e.notifyStateChanged = fn
 }
 
-// Handle implements transport.CommandHandler. It is the single choke point
-// every inbound command passes through.
+// Handle implement transport.CommandHandler เป็นจุดคอขวดจุดเดียวที่ทุก
+// คำสั่งขาเข้าต้องผ่าน
 func (e *Executor) Handle(ctx context.Context, cmd transport.CommandPayload) (result transport.CommandResultPayload) {
 	result = transport.CommandResultPayload{CommandID: cmd.ID, ExecutedUnix: time.Now().Unix()}
 
-	// A bad command handler must never take the whole agent down with it.
+	// handler ของคำสั่งที่พังต้องไม่ดึงเอา agent ทั้งตัวล้มไปด้วย
 	defer func() {
 		if r := recover(); r != nil {
 			e.log.Error().Interface("panic", r).Str("command_id", cmd.ID).Str("action", cmd.Action).Msg("command handler panicked, recovered")
@@ -130,7 +134,8 @@ func (e *Executor) Handle(ctx context.Context, cmd transport.CommandPayload) (re
 		return result
 	}
 
-	// Reject stale commands to limit replay-attack value of a captured envelope.
+	// ปฏิเสธคำสั่งที่เก่าเกินไป เพื่อลดคุณค่าของ replay attack จาก envelope
+	// ที่ถูกดักจับไว้
 	if age := time.Since(time.Unix(cmd.IssuedAtUnix, 0)); age > 2*time.Minute || age < -30*time.Second {
 		auditEvt.Bool("accepted", false).Str("reason", "stale_or_future_timestamp").Dur("age", age).Msg("command rejected")
 		result.Success = false
@@ -184,16 +189,15 @@ func (e *Executor) Handle(ctx context.Context, cmd transport.CommandPayload) (re
 	return result
 }
 
-// killProcess accepts either params["pid"] (exact, unambiguous) or
-// params["name"] (resolved against the live process list at execution
-// time — not a stale telemetry snapshot). Name lookup exists because
-// natural-language commands ("close the hung antivirus scanner") name a
-// program, not a PID; the server-side LLM parser and guardrail never
-// invent a PID themselves. If a name matches more than one running
-// process, this refuses rather than killing all matches — silently
-// expanding a kill from one process to several based on a fuzzy name
-// match is exactly the kind of blast-radius growth this agent's design
-// avoids elsewhere (see the executor package doc comment).
+// killProcess รับได้ทั้ง params["pid"] (แม่นยำ ไม่กำกวม) หรือ
+// params["name"] (resolve กับ process list ที่รันอยู่จริง ณ เวลา execute
+// — ไม่ใช่ telemetry snapshot เก่า) การค้นหาด้วยชื่อมีไว้เพราะคำสั่งแบบ
+// natural language ("ปิดตัวสแกนแอนตี้ไวรัสที่ค้างอยู่") ระบุชื่อโปรแกรม ไม่
+// ใช่ PID; LLM parser และ guardrail ฝั่ง server ไม่เคยสร้าง PID ขึ้นมาเอง
+// ถ้าชื่อ match กับ process ที่รันอยู่มากกว่าหนึ่งตัว ฟังก์ชันนี้จะปฏิเสธ
+// แทนที่จะ kill ทั้งหมด — การขยาย blast radius จาก kill หนึ่ง process ไป
+// เป็นหลายตัวโดยไม่บอกใคร จาก fuzzy name match แบบนี้ เป็นสิ่งที่ design
+// ของ agent นี้พยายามเลี่ยงในทุกจุด (ดู doc comment ของ package executor)
 func (e *Executor) killProcess(ctx context.Context, params map[string]string) (string, error) {
 	if pidStr, ok := params["pid"]; ok {
 		pid, err := strconv.ParseInt(pidStr, 10, 32)
@@ -211,7 +215,7 @@ func (e *Executor) killProcess(ctx context.Context, params map[string]string) (s
 }
 
 func (e *Executor) killByPID(ctx context.Context, pid int32) (string, error) {
-	if pid <= 4 { // 0 and 4 (System) on Windows, 1 (init/launchd) on Unix
+	if pid <= 4 { // 0 กับ 4 (System) บน Windows, 1 (init/launchd) บน Unix
 		return "", fmt.Errorf("kill_process: refusing to touch protected low-numbered pid %d", pid)
 	}
 
@@ -274,16 +278,15 @@ func (e *Executor) killByName(ctx context.Context, name string) (string, error) 
 	}
 }
 
-// killVerified re-checks the process's name and start time immediately
-// before killing, right after the name-based lookup in killByName above.
-// The OS can recycle a PID to an unrelated process between "list all
-// processes" and "kill this PID" — re-reading both name and creation time
-// by PID right before the kill narrows that window from "the whole process
-// list scan" down to one syscall. It can't be closed to zero in userspace
-// (that needs a kernel handle, not a re-read by PID), but a PID getting
-// recycled to a same-named process with the same start-time timestamp in
-// that single-syscall gap is not a realistic scenario to defend further
-// against.
+// killVerified เช็คชื่อและเวลาเริ่มของ process ซ้ำอีกครั้งทันทีก่อน kill
+// ต่อจากการค้นหาด้วยชื่อใน killByName ด้านบน OS สามารถ recycle PID ให้
+// process ที่ไม่เกี่ยวข้องกันได้ระหว่างช่วง "list process ทั้งหมด" กับ
+// "kill PID นี้" — การอ่านทั้งชื่อและ creation time ซ้ำด้วย PID ก่อน kill
+// ช่วยบีบช่องโหว่นี้จาก "การสแกน process list ทั้งหมด" ให้เหลือแค่ syscall
+// เดียว จะปิดให้เป็นศูนย์เลยในระดับ userspace ไม่ได้ (ต้องใช้ kernel handle
+// ไม่ใช่แค่อ่านซ้ำด้วย PID) แต่การที่ PID ถูก recycle ไปเป็น process ชื่อ
+// เดียวกันพร้อม timestamp เริ่มต้นเดียวกันภายในช่วง syscall เดียวนั้น ไม่ใช่
+// สถานการณ์ที่สมจริงพอจะต้องป้องกันเพิ่มอีก
 func (e *Executor) killVerified(ctx context.Context, m processMatch, expectedName string) (string, error) {
 	freshName, err := m.proc.NameWithContext(ctx)
 	if err != nil || !strings.EqualFold(freshName, expectedName) {
@@ -297,10 +300,10 @@ func (e *Executor) killVerified(ctx context.Context, m processMatch, expectedNam
 	return e.killByPID(ctx, m.proc.Pid)
 }
 
-// cleanTemp deletes the contents (not the directory itself) of one
-// allowlisted directory, delegating the actual safety checks (path
-// traversal, allowlist membership) to the shared internal/cleanup package
-// also used by the autonomous disk self-healing monitor.
+// cleanTemp ลบเนื้อหา (ไม่ลบตัวไดเรกทอรี) ของไดเรกทอรีที่อยู่ใน allowlist
+// หนึ่งรายการ โดยส่งต่อ safety check จริง ๆ (path traversal, การเป็นสมาชิก
+// ของ allowlist) ให้ package internal/cleanup ที่ใช้ร่วมกับ self-healing
+// monitor ของดิสก์แบบอัตโนมัติด้วย
 func (e *Executor) cleanTemp(params map[string]string) (string, error) {
 	target := params["dir"]
 	if target == "" {
@@ -318,18 +321,18 @@ func (e *Executor) cleanTemp(params map[string]string) (string, error) {
 	return res.String(), nil
 }
 
-// restartHost schedules a host restart after cfg.RestartConfirmDelay so a
-// mistaken or malicious single command doesn't yank the machine out from
-// under a user with zero warning. Requires params["confirm"] == "true" as a
-// second, explicit signal beyond the allowlist+signature checks already
-// enforced in Handle.
+// restartHost ตั้งเวลา restart เครื่องหลังจาก cfg.RestartConfirmDelay
+// เพื่อไม่ให้คำสั่งเดียวที่ผิดพลาดหรือมุ่งร้ายดึงเครื่องออกจากมือ user โดยไม่
+// มีการเตือนล่วงหน้าเลย ต้องมี params["confirm"] == "true" เป็นสัญญาณ
+// ชัดเจนอันที่สอง นอกเหนือจาก allowlist+signature check ที่ Handle บังคับ
+// ใช้อยู่แล้ว
 //
-// The delay itself is tracked by the OS's own shutdown command (Windows'
-// "/t <seconds>", Unix's "shutdown -r +<minutes>"), not by sleeping inside
-// this process — a bare goroutine sleeping here would silently forget the
-// scheduled restart if the agent service itself got stopped or crashed
-// during the delay window, even though the audit log already recorded it as
-// "scheduled". The OS's own delayed-shutdown mechanism survives that.
+// ตัว delay เองถูก track โดยคำสั่ง shutdown ของ OS เอง (Windows ใช้
+// "/t <seconds>", Unix ใช้ "shutdown -r +<minutes>") ไม่ใช่การ sleep อยู่ใน
+// process นี้ — goroutine ที่ sleep เฉย ๆ ตรงนี้จะลืมการ restart ที่ตั้งไว้
+// แบบเงียบ ๆ ถ้า agent service เองถูกหยุดหรือ crash ระหว่างช่วง delay แม้
+// audit log จะบันทึกไว้แล้วว่า "scheduled" ก็ตาม กลไก delayed-shutdown ของ
+// OS เองรอดจากสถานการณ์นั้นได้
 func (e *Executor) restartHost(params map[string]string) (string, error) {
 	if params["confirm"] != "true" {
 		return "", fmt.Errorf("restart_host: requires params.confirm == \"true\"")
@@ -363,9 +366,10 @@ func restartCommand(delay time.Duration) (*exec.Cmd, error) {
 		}
 		return exec.Command("shutdown", "/r", "/t", strconv.Itoa(secs)), nil
 	case "darwin", "linux":
-		// Unix shutdown's time argument is minutes (or "now"/"hh:mm"), not
-		// seconds — round up so a sub-minute delay still gets at least one
-		// minute of OS-tracked warning rather than silently truncating to 0.
+		// argument เวลาของ shutdown บน Unix เป็นนาที (หรือ "now"/"hh:mm")
+		// ไม่ใช่วินาที — ปัดขึ้นเพื่อให้ delay ที่สั้นกว่าหนึ่งนาทียังได้
+		// คำเตือนที่ OS track อย่างน้อยหนึ่งนาที แทนที่จะถูกปัดลงเหลือ 0
+		// แบบเงียบ ๆ
 		mins := int((delay + time.Minute - time.Nanosecond) / time.Minute)
 		if mins < 1 {
 			mins = 1
@@ -376,15 +380,15 @@ func restartCommand(delay time.Duration) (*exec.Cmd, error) {
 	}
 }
 
-// shutdownHost is restartHost's counterpart for a genuine power-off — added
-// after a real operator request ("shut down the device") got misread as
-// restart_host, since that was previously the only whole-machine action this
-// agent implemented. Reboot (restart_host) turns the machine back on by
-// itself; shutdown_host powers it off and leaves it off — operationally
-// different enough (someone has to physically press the power button, or
-// use out-of-band remote power-on, to bring it back) that conflating the two
-// is a real mistake, not just a wording difference. Same confirm-gate and
-// OS-tracked-delay reasoning as restartHost applies here unchanged.
+// shutdownHost เป็นคู่กับ restartHost สำหรับการปิดเครื่องจริง ๆ — เพิ่มเข้า
+// มาหลังจากคำขอของ operator จริง ("ปิดเครื่องนี้") ถูกตีความผิดเป็น
+// restart_host เพราะแต่ก่อนนั้นเป็น action ระดับทั้งเครื่องตัวเดียวที่ agent
+// นี้มี Reboot (restart_host) เปิดเครื่องกลับมาเองได้; shutdown_host ปิด
+// เครื่องแล้วปล่อยให้ดับไป — ต่างกันในทางปฏิบัติมากพอ (ต้องมีคนไปกดปุ่ม
+// power จริง ๆ หรือใช้ remote power-on แบบ out-of-band ถึงจะเปิดกลับมาได้)
+// จนการปนกันระหว่างสองอย่างนี้ถือเป็นความผิดพลาดจริง ๆ ไม่ใช่แค่คำพูดต่างกัน
+// ใช้เหตุผลเรื่อง confirm-gate และ OS-tracked-delay เดียวกับ restartHost
+// ทุกประการ
 func (e *Executor) shutdownHost(params map[string]string) (string, error) {
 	if params["confirm"] != "true" {
 		return "", fmt.Errorf("shutdown_host: requires params.confirm == \"true\"")
@@ -428,31 +432,29 @@ func shutdownCommand(delay time.Duration) (*exec.Cmd, error) {
 	}
 }
 
-// runScript executes a server-supplied script with no interactive window —
-// this is the agent's highest-risk capability, so every layer here exists to
-// keep it bounded and accountable rather than to make it more powerful:
+// runScript รันสคริปต์ที่ server ส่งมาโดยไม่มีหน้าต่าง interactive —
+// เป็นความสามารถที่เสี่ยงที่สุดของ agent นี้ ทุกชั้นตรงนี้จึงมีไว้เพื่อจำกัด
+// ขอบเขตและตรวจสอบย้อนกลับได้ ไม่ใช่เพื่อให้มันทรงพลังขึ้น:
 //
-//   - reachable only if "run_script" is in the local config allowlist
-//     (off by default) and only after the same signature+timestamp checks
-//     every other command already passed through in Handle;
-//   - script body size and total execution time are hard-capped
-//     (cfg.MaxScriptBytes / cfg.ScriptTimeout) and cannot be overridden by
-//     the command's own params;
-//   - the full script body (hashed + logged) and captured stdout/stderr
-//     (truncated at cfg.MaxScriptOutputBytes) are written to audit.log for
-//     every attempt, success or failure — "no window" means invisible to the
-//     interactive user session, never invisible to the audit trail;
-//   - the child process is spawned with CREATE_NO_WINDOW on Windows (see
-//     script_windows.go), which is standard hygiene for any service that
-//     shells out — Windows services already have no desktop to show a
-//     window on regardless.
+//   - เรียกใช้ได้ก็ต่อเมื่อ "run_script" อยู่ใน allowlist ของ config ในเครื่อง
+//     (ปิดไว้เป็น default) และผ่าน signature+timestamp check เดียวกับที่
+//     คำสั่งอื่นทุกตัวผ่านใน Handle มาแล้วเท่านั้น;
+//   - ขนาด script body และเวลารันรวมถูกจำกัดตายตัว (cfg.MaxScriptBytes /
+//     cfg.ScriptTimeout) และ params ของคำสั่งเอง override ไม่ได้;
+//   - script body เต็ม (hash + log ไว้) และ stdout/stderr ที่ capture มา
+//     (ตัดที่ cfg.MaxScriptOutputBytes) ถูกเขียนลง audit.log ทุกครั้งที่
+//     พยายามรัน ไม่ว่าจะสำเร็จหรือล้มเหลว — "ไม่มีหน้าต่าง" แปลว่ามองไม่เห็น
+//     จาก interactive user session เท่านั้น ไม่เคยหมายถึงมองไม่เห็นใน audit
+//     trail;
+//   - child process ถูก spawn ด้วย CREATE_NO_WINDOW บน Windows (ดู
+//     script_windows.go) ซึ่งเป็นสุขอนามัยมาตรฐานสำหรับ service ใด ๆ ที่ shell
+//     out — Windows service เองก็ไม่มี desktop ให้แสดงหน้าต่างอยู่แล้ว
 //
-// The agent cannot vet arbitrary script *content* the way it can vet a
-// fixed-shape action like kill_process — that responsibility belongs to
-// whatever approval/RBAC workflow gates who can push a run_script command
-// server-side. Treat enabling this action as equivalent to granting whoever
-// controls that server-side workflow full SYSTEM/root access to every
-// enrolled host.
+// agent ตรวจ *เนื้อหา* สคริปต์แบบใด ๆ ก็ได้ไม่ได้เหมือนตรวจ action รูปแบบ
+// ตายตัวอย่าง kill_process — ความรับผิดชอบตรงนั้นเป็นของ workflow
+// approval/RBAC ที่คุมว่าใครจะ push คำสั่ง run_script ได้ฝั่ง server ให้ถือว่า
+// การเปิด action นี้เท่ากับให้สิทธิ์ SYSTEM/root เต็มรูปแบบบนทุกเครื่องที่
+// ลงทะเบียนไว้ กับใครก็ตามที่คุม workflow ฝั่ง server นั้นอยู่
 func (e *Executor) runScript(ctx context.Context, cmd transport.CommandPayload) (string, error) {
 	interpreter := cmd.Params["interpreter"]
 	script := cmd.Params["script"]
@@ -505,21 +507,21 @@ func (e *Executor) runScript(ctx context.Context, cmd transport.CommandPayload) 
 	if err != nil {
 		return "", fmt.Errorf("run_script: %w", err)
 	}
-	execCmd.Stderr = execCmd.Stdout // a script's own error output belongs in the same stream a caller watches live
+	execCmd.Stderr = execCmd.Stdout // error output ของสคริปต์เองควรอยู่ใน stream เดียวกับที่ caller เฝ้าดูแบบ live
 	hideWindow(execCmd)
 
 	if err := execCmd.Start(); err != nil {
 		return "", fmt.Errorf("run_script: start: %w", err)
 	}
 
-	// Streamed line-by-line via e.sendOutput as it's produced — same
-	// pattern networkDiagnostic uses, and for the same reason: a
-	// multi-minute install (download + silent-install a real installer)
-	// left an operator with zero visibility into whether anything was
-	// happening until the whole thing finished, which read indistinguishable
-	// from a hung command. The dashboard's Software Deploy page parses
-	// PROGRESS:/STATUS: lines a generated script emits into a progress bar;
-	// any other line is just shown as raw output.
+	// stream ออกไปทีละบรรทัดผ่าน e.sendOutput ทันทีที่ผลิตออกมา — pattern
+	// เดียวกับที่ networkDiagnostic ใช้ และด้วยเหตุผลเดียวกัน: การติดตั้งที่
+	// ใช้เวลาหลายนาที (download + silent-install ตัวติดตั้งจริง) เคยทำให้
+	// operator มองไม่เห็นอะไรเลยว่ามีอะไรเกิดขึ้นหรือไม่จนกว่าทุกอย่างจะจบ
+	// ซึ่งอ่านไม่ออกว่าต่างจากคำสั่งที่ค้างยังไง หน้า Software Deploy บน
+	// dashboard parse บรรทัด PROGRESS:/STATUS: ที่สคริปต์ที่ generate ขึ้น
+	// ส่งออกมาให้กลายเป็น progress bar; บรรทัดอื่น ๆ ก็แสดงเป็น raw output
+	// เฉย ๆ
 	var full strings.Builder
 	truncated := false
 	scanner := bufio.NewScanner(stdout)
@@ -566,9 +568,9 @@ func (e *Executor) runScript(ctx context.Context, cmd transport.CommandPayload) 
 	return fmt.Sprintf("script exited 0; output: %s", output), nil
 }
 
-// scriptCommand maps a requested interpreter to an executable, base args,
-// and staged-file extension, restricted to a fixed set per platform — no
-// arbitrary interpreter path is ever accepted from a command.
+// scriptCommand map interpreter ที่ร้องขอไปเป็น executable, base args, และ
+// นามสกุลไฟล์ staged จำกัดไว้เป็นชุดตายตัวต่อแพลตฟอร์ม — ไม่มีการรับ
+// interpreter path แบบใด ๆ จากคำสั่งเลย
 func scriptCommand(interpreter string) (exePath string, args []string, ext string, err error) {
 	switch runtime.GOOS {
 	case "windows":
@@ -616,12 +618,12 @@ func writeTempScript(body, ext string) (string, error) {
 	return path, nil
 }
 
-// networkDiagnosticTools is the fixed allowlist of read-only network
-// utilities this action can run — never an arbitrary command name, and
-// never shell-interpreted (exec.Command below always takes the target as
-// its own argv element, so even a maliciously-crafted target string can't
-// break out into a second command the way string-concatenated shell input
-// could).
+// networkDiagnosticTools คือ allowlist ตายตัวของ network utility แบบ
+// read-only ที่ action นี้รันได้ — ไม่มีวันเป็นชื่อคำสั่งอิสระ และไม่ผ่าน
+// shell interpret เลย (exec.Command ด้านล่างรับ target เป็น argv element
+// ของตัวเองเสมอ ดังนั้นแม้แต่ target string ที่ตั้งใจสร้างมาให้เป็นอันตราย
+// ก็หลุดออกไปเป็นคำสั่งที่สองไม่ได้ แบบที่ shell input ที่ concatenate ด้วย
+// string ทำได้)
 var networkDiagnosticTools = map[string]struct{}{
 	"ping":     {},
 	"tracert":  {},
@@ -629,22 +631,21 @@ var networkDiagnosticTools = map[string]struct{}{
 	"netstat":  {},
 }
 
-// targetPattern is deliberately permissive enough for real hostnames/IPv4/
-// IPv6 (dots, colons, hyphens, underscores) while rejecting anything that
-// isn't plausibly one of those. This is a sanity/abuse check, not the actual
-// security boundary — exec.Command with a separate argv element already
-// prevents shell injection regardless of what this string contains.
+// targetPattern ตั้งใจให้หลวมพอสำหรับ hostname/IPv4/IPv6 จริง ๆ (จุด, ทวิภาค,
+// ขีดกลาง, underscore) แต่ปฏิเสธอะไรก็ตามที่ไม่น่าจะเป็นสิ่งเหล่านั้น นี่เป็น
+// แค่ sanity/abuse check ไม่ใช่ security boundary จริง — exec.Command ที่ใช้
+// argv element แยกต่างหากป้องกัน shell injection อยู่แล้วไม่ว่า string นี้
+// จะมีอะไรอยู่ข้างในก็ตาม
 var targetPattern = regexp.MustCompile(`^[a-zA-Z0-9.:_-]{1,253}$`)
 
-// networkDiagnostic runs one fixed, read-only network utility (ping/tracert/
-// nslookup/netstat) and streams its output back line-by-line as it's
-// produced via e.sendOutput, rather than making the caller wait for the
-// whole thing to finish before seeing anything — a tracert to an
-// unreachable host can take 15-20 seconds, and an operator watching the
-// dashboard should see each hop appear as it happens, the same as if they
-// ran it themselves in a terminal. Read-only by construction: nothing here
-// can change device state, so — unlike kill_process/restart_host — this
-// needs no destructive-action safeguards.
+// networkDiagnostic รัน network utility แบบ read-only ตัวเดียวที่ตายตัว
+// (ping/tracert/nslookup/netstat) แล้ว stream output กลับไปทีละบรรทัดตามที่
+// ผลิตออกมาผ่าน e.sendOutput แทนที่จะให้ caller รอจนจบก่อนถึงจะเห็นอะไร —
+// tracert ไปยัง host ที่ไปไม่ถึงอาจใช้เวลา 15-20 วินาที และ operator ที่เฝ้า
+// ดู dashboard ควรเห็นแต่ละ hop ปรากฏขึ้นตามจริง เหมือนกับรันเองใน terminal
+// เป็น read-only โดยโครงสร้าง: ไม่มีอะไรตรงนี้เปลี่ยนสถานะเครื่องได้ ดังนั้น
+// — ต่างจาก kill_process/restart_host — ไม่จำเป็นต้องมี safeguard ของ
+// destructive action เลย
 func (e *Executor) networkDiagnostic(ctx context.Context, commandID string, params map[string]string) (string, error) {
 	tool := strings.ToLower(strings.TrimSpace(params["tool"]))
 	if _, ok := networkDiagnosticTools[tool]; !ok {
@@ -675,7 +676,7 @@ func (e *Executor) networkDiagnostic(ctx context.Context, commandID string, para
 	if err != nil {
 		return "", fmt.Errorf("network_diagnostic: %w", err)
 	}
-	execCmd.Stderr = execCmd.Stdout // ping/nslookup report real failures on stderr - keep them in the same stream
+	execCmd.Stderr = execCmd.Stdout // ping/nslookup รายงาน failure จริงทาง stderr - เก็บไว้ใน stream เดียวกัน
 
 	if err := execCmd.Start(); err != nil {
 		return "", fmt.Errorf("network_diagnostic: start %s: %w", tool, err)
@@ -696,9 +697,9 @@ func (e *Executor) networkDiagnostic(ctx context.Context, commandID string, para
 
 	waitErr := execCmd.Wait()
 
-	// A non-zero exit is normal/expected for these tools (ping against an
-	// unreachable host exits non-zero, for instance) — noted in the result
-	// rather than treated as this command itself having failed.
+	// exit code ที่ไม่ใช่ 0 เป็นเรื่องปกติที่คาดไว้อยู่แล้วสำหรับ tool พวกนี้
+	// (เช่น ping ไปยัง host ที่ไปไม่ถึงจะ exit ไม่เป็น 0) — แค่บันทึกไว้ใน
+	// result เท่านั้น ไม่ได้ถือว่าคำสั่งนี้เองล้มเหลว
 	var note string
 	if runCtx.Err() == context.DeadlineExceeded {
 		note = fmt.Sprintf("timed out after %s", timeout)
@@ -719,11 +720,11 @@ func (e *Executor) networkDiagnostic(ctx context.Context, commandID string, para
 	return result, nil
 }
 
-// networkDiagnosticCommand maps a requested tool to its OS binary, args, and
-// a hard timeout — restricted to a fixed set per platform, same pattern as
-// scriptCommand above. Windows is the tested path (this project's actual
-// deployment target); the Unix branch is included for build-completeness
-// but hasn't been exercised on real hardware.
+// networkDiagnosticCommand map tool ที่ร้องขอไปเป็น binary ของ OS, args,
+// และ timeout ตายตัว — จำกัดเป็นชุดตายตัวต่อแพลตฟอร์ม pattern เดียวกับ
+// scriptCommand ด้านบน Windows เป็น path ที่ทดสอบแล้ว (เป้าหมายการ deploy
+// จริงของโปรเจกต์นี้); ฝั่ง Unix ใส่ไว้เพื่อให้ build ผ่านครบทุกแพลตฟอร์ม
+// แต่ยังไม่เคยทดสอบบนเครื่องจริง
 func networkDiagnosticCommand(tool, target string) (exePath string, args []string, timeout time.Duration, err error) {
 	switch runtime.GOOS {
 	case "windows":

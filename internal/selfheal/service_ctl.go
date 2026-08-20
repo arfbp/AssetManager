@@ -1,11 +1,10 @@
-// Package selfheal implements the agent's autonomous self-healing loops:
-// restarting critical OS services that have stopped, cleaning allowlisted
-// temp directories under disk pressure, and spotting/reacting to per-process
-// memory growth. Everything this package acts on is bounded by local
-// config, set ahead of time by whoever deploys the agent — none of it is
-// dynamically expandable by a runtime server command, which keeps it a
-// distinct, narrower trust boundary than internal/executor's remote
-// command path.
+// Package selfheal คือ self-healing loop แบบอัตโนมัติของ agent: restart OS
+// service สำคัญที่หยุดทำงาน, เคลียร์ temp directory ที่อยู่ใน allowlist
+// เมื่อดิสก์ตึง, และคอยจับ/ตอบสนองต่อการใช้หน่วยความจำที่โตขึ้นของแต่ละ
+// process ทุกอย่างที่ package นี้ทำถูกจำกัดด้วย config ในเครื่อง ที่ตั้งไว้
+// ล่วงหน้าโดยคนที่ deploy agent — ไม่มีอะไรขยายได้แบบ dynamic ด้วยคำสั่งจาก
+// server ตอน runtime เลย ทำให้เป็น trust boundary ที่แยกและแคบกว่า path
+// คำสั่งระยะไกลของ internal/executor
 package selfheal
 
 import "context"
@@ -18,9 +17,9 @@ const (
 	StateUnknown ServiceState = "unknown"
 )
 
-// ServiceController abstracts the OS service manager: Windows SCM,
-// systemd, or launchd. Implementations live in service_ctl_windows.go and
-// service_ctl_unix.go (build-tag separated).
+// ServiceController คือ abstraction ของ OS service manager: Windows SCM,
+// systemd, หรือ launchd ตัว implementation อยู่ใน service_ctl_windows.go
+// และ service_ctl_unix.go (แยกด้วย build-tag)
 type ServiceController interface {
 	Status(ctx context.Context, name string) (ServiceState, error)
 	Start(ctx context.Context, name string) error

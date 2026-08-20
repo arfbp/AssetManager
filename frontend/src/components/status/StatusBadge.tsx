@@ -15,9 +15,9 @@ const TEXT_CLASS: Record<Tone, string> = {
 };
 
 /**
- * Status is never color-alone: every badge pairs the dot with a text label.
- * Reused for both connection status (online/offline) and telemetry
- * severity (good/warning/critical) — same visual language throughout.
+ * สถานะไม่ใช้สีอย่างเดียวบอกความหมาย: badge ทุกอันมีจุดสีคู่กับป้ายข้อความ
+ * เสมอ ใช้ร่วมกันทั้งสถานะการเชื่อมต่อ (online/offline) และระดับความ
+ * รุนแรงของ telemetry (good/warning/critical) — ภาษาภาพเดียวกันทั้งระบบ
  */
 export function StatusBadge({ tone, label }: { tone: Tone; label: string }) {
   return (

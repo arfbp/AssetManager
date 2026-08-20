@@ -8,24 +8,24 @@ import (
 )
 
 type ServiceWatchdogConfig struct {
-	// Services is the fixed, locally-configured list of service names to
-	// watch (e.g. "Spooler", "postgresql-x64-16", "OpenVPNService"). This is
-	// never expanded at runtime by a remote command.
+	// Services คือรายชื่อ service ที่ต้องจับตาดู กำหนดไว้ตายตัวในเครื่อง
+	// (เช่น "Spooler", "postgresql-x64-16", "OpenVPNService") ไม่มีการขยาย
+	// รายการนี้ตอน runtime ด้วยคำสั่งจากระยะไกลเลย
 	Services []string
-	// CheckInterval is how often to poll each service's status.
+	// CheckInterval คือความถี่ในการ poll สถานะของแต่ละ service
 	CheckInterval time.Duration
-	// MaxRestartsPerHour caps how many times the watchdog will restart the
-	// same service within a rolling hour — beyond that it's a crash loop,
-	// not a transient failure, and keeps failing quietly is a stealth
-	// pattern this agent explicitly avoids: it stops touching the service
-	// and audit-logs the suppression loudly instead.
+	// MaxRestartsPerHour จำกัดจำนวนครั้งที่ watchdog จะ restart service
+	// เดียวกันภายในหนึ่งชั่วโมงแบบ rolling — เกินกว่านั้นถือว่าเป็น crash
+	// loop ไม่ใช่ความล้มเหลวชั่วคราวแล้ว และการปล่อยให้ fail ต่อไปแบบเงียบ ๆ
+	// ก็เป็น pattern แบบซ่อนเร้นที่ agent นี้ตั้งใจเลี่ยง: มันจะหยุดแตะ
+	// service นั้นแล้ว audit-log การระงับนี้แบบดัง ๆ แทน
 	MaxRestartsPerHour int
 }
 
-// Event is emitted for every self-healing action worth surfacing to the
-// server — shared shape across the service watchdog, disk cleaner, and
-// (via LeakEvent) memory monitor. Target is the thing acted on (a service
-// name or a directory path, depending on Action's prefix).
+// Event ถูก emit สำหรับทุก self-healing action ที่ควร surface ไปให้ server
+// — รูปแบบเดียวกันใช้ร่วมกันทั้ง service watchdog, disk cleaner, และ (ผ่าน
+// LeakEvent) memory monitor Target คือสิ่งที่ถูกกระทำ (ชื่อ service หรือ
+// path ไดเรกทอรี แล้วแต่ prefix ของ Action)
 type Event struct {
 	Target string
 	Action string // e.g. "restarted" | "restart_failed" | "restart_suppressed" | "disk_cleanup"
@@ -59,8 +59,8 @@ func NewServiceWatchdog(cfg ServiceWatchdogConfig, ctl ServiceController, log, a
 	}
 }
 
-// Run blocks until ctx is cancelled, checking all configured services on
-// CheckInterval (plus once immediately on start).
+// Run block อยู่จนกว่า ctx จะถูก cancel โดยเช็ค service ที่ config ไว้
+// ทั้งหมดตาม CheckInterval (บวกอีกหนึ่งครั้งทันทีตอนเริ่ม)
 func (w *ServiceWatchdog) Run(ctx context.Context) {
 	if len(w.cfg.Services) == 0 {
 		w.log.Info().Msg("service watchdog: no services configured, idle")
@@ -127,7 +127,7 @@ func (w *ServiceWatchdog) emit(e Event) {
 	}
 }
 
-// allowRestart enforces the rolling-hour restart cap per service name.
+// allowRestart บังคับใช้ cap การ restart แบบ rolling-hour ต่อชื่อ service
 func (w *ServiceWatchdog) allowRestart(name string) bool {
 	now := time.Now()
 	cutoff := now.Add(-time.Hour)

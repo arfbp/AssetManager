@@ -3,13 +3,13 @@
 import { LOCALES, LOCALE_LABELS, setStoredLocale, type Locale } from "@/lib/i18n";
 
 /**
- * Switches the shell's UI language (sidebar nav + header — see
- * lib/i18n.ts's SHELL_STRINGS for scope). Deliberately a plain <select>
- * next to ThemeToggle rather than a new dropdown widget — three options,
- * no need for anything fancier. AppShell owns the actual `locale` state
- * (read from localStorage on mount, same pattern ThemeToggle uses for
- * light/dark) since it's the only component that renders translated shell
- * strings; this component is just the control.
+ * สลับภาษา UI ของ shell (nav ของ sidebar + header — ดูขอบเขตที่
+ * SHELL_STRINGS ใน lib/i18n.ts) ตั้งใจใช้ <select> ธรรมดาวางข้างๆ
+ * ThemeToggle แทนที่จะทำ dropdown widget ใหม่ — มีแค่สามตัวเลือก ไม่จำเป็น
+ * ต้องทำอะไรซับซ้อนกว่านี้ AppShell เป็นเจ้าของ state `locale` จริง (อ่าน
+ * จาก localStorage ตอน mount แบบเดียวกับที่ ThemeToggle ทำกับ light/dark)
+ * เพราะเป็น component เดียวที่ render ข้อความ shell ที่แปลแล้ว ส่วน
+ * component นี้เป็นแค่ตัวควบคุม
  */
 export function LanguageSwitcher({ locale, onChange }: { locale: Locale; onChange: (locale: Locale) => void }) {
   return (

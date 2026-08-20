@@ -1,6 +1,6 @@
-// WebSocket hub for many concurrent agent connections. Handles auth,
-// heartbeat-based dead-connection reaping, and dispatching inbound
-// telemetry/heartbeat/command_result/alert messages to the registry and logs.
+// WebSocket hub สำหรับ agent connection จำนวนมากที่เชื่อมต่อพร้อมกัน จัดการ
+// auth, การเก็บกวาด connection ที่ตายแล้วด้วย heartbeat และส่งต่อข้อความ
+// telemetry/heartbeat/command_result/alert ขาเข้าไปยัง registry และ log
 import { createServer as createHttpServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { readFileSync, createReadStream, existsSync, statSync } from "node:fs";
@@ -28,26 +28,26 @@ import { signSelfUpdate, signConfigUpdate } from "../crypto/commandSigner.js";
 import type { OrgCredentialCache, OrgCredential } from "../orgs/orgCredentials.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const MAX_MESSAGE_BYTES = 256 * 1024; // one telemetry snapshot is small; this is a generous ceiling against abuse
+const MAX_MESSAGE_BYTES = 256 * 1024; // telemetry snapshot หนึ่งอันมีขนาดเล็ก นี่คือเพดานที่กว้างพอกันการโจมตี
 
 interface ConnState {
   agentId: string | null;
   isAlive: boolean;
   remoteIp: string | null;
-  // Resolved once at connect time from the presented bearer token (see
-  // resolveOrgByAgentToken below) and held for the connection's lifetime —
-  // a rotated secret only takes effect on the agent's next reconnect, same
-  // "connection-lifetime cache" tradeoff as OrgCredentialCache itself.
+  // Resolve ครั้งเดียวตอน connect จาก bearer token ที่ยื่นมา (ดู
+  // resolveOrgByAgentToken ด้านล่าง) และเก็บไว้ตลอดอายุ connection — secret
+  // ที่ rotate แล้วจะมีผลตอน agent reconnect ครั้งถัดไปเท่านั้น ทำงานแบบ
+  // trade-off "cache ตลอดอายุ connection" เดียวกับ OrgCredentialCache เอง
   orgId: string;
   hmacSecret: string;
 }
 
-// Every agent (and every plain-HTTP download route below) used to compare
-// against one fleet-wide OPTIFLEET_AGENT_AUTH_TOKEN string — now each
-// presented token is looked up against every organization's own token, so a
-// customer's own agents authenticate with credentials no other org holds.
-// Centralized here since the same check used to be copy-pasted 3 times
-// (verifyClient, /agent-download/exe, /agent-download/custom/:id).
+// เดิมทุก agent (และทุก plain-HTTP download route ด้านล่าง) เทียบกับ
+// OPTIFLEET_AGENT_AUTH_TOKEN string เดียวที่ใช้ทั้ง fleet — ตอนนี้ token ที่
+// ยื่นมาแต่ละครั้งจะถูก lookup กับ token ของแต่ละ organization เอง ดังนั้น
+// agent ของลูกค้าคนหนึ่งจะ authenticate ด้วย credential ที่ org อื่นไม่มี
+// รวมไว้ตรงนี้เพราะเช็คแบบเดียวกันนี้เดิมถูก copy-paste ไว้ 3 ที่ (verifyClient,
+// /agent-download/exe, /agent-download/custom/:id)
 function resolveOrgByAgentToken(credentials: OrgCredentialCache, authHeader: string | undefined): OrgCredential | null {
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice("Bearer ".length);
@@ -77,13 +77,13 @@ export function startWsServer(
     );
   }
 
-  // Plain HTTP GET on the SAME listener the WebSocket upgrade lives on —
-  // agents already trust this exact host:port:cert (it's what they dial for
-  // their own connection), so self-update fetches from here rather than
-  // needing a second address/cert an agent would have to be separately
-  // configured to trust. Node's http(s).Server only routes upgrade
-  // requests to the WebSocketServer; every other request still reaches this
-  // plain "request" handler untouched.
+  // Plain HTTP GET บน listener ตัวเดียวกับที่ WebSocket upgrade ใช้อยู่ —
+  // agent เชื่อถือ host:port:cert ตัวนี้อยู่แล้ว (มันคือสิ่งที่ dial เพื่อ
+  // connection ของตัวเอง) ดังนั้น self-update จึงดึงจากที่นี่แทนที่จะต้องมี
+  // address/cert ที่สองที่ agent ต้องตั้งค่าให้เชื่อถือแยกต่างหาก
+  // http(s).Server ของ Node จะ route เฉพาะ upgrade request ไปยัง
+  // WebSocketServer; request อื่นๆ ทั้งหมดยังคงมาถึง "request" handler
+  // ธรรมดานี้เหมือนเดิม
   httpOrHttps.on("request", (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== "GET") {
       res.writeHead(404).end();
@@ -100,26 +100,26 @@ export function startWsServer(
         res.writeHead(404).end("no build available");
         return;
       }
-      // Content-Length lets a downloading script compute real download
-      // progress (bytes-received / total) — without it a plain streamed
-      // response has no advertised size, so a script has no way to turn
-      // "some bytes arrived" into a percentage. See the Software Deploy
-      // page's generated scripts.
+      // Content-Length ช่วยให้สคริปต์ที่กำลังดาวน์โหลดคำนวณ progress จริง
+      // (bytes-received / total) ได้ — ถ้าไม่มีค่านี้ response แบบ stream
+      // ธรรมดาจะไม่มีขนาดที่ประกาศไว้ ดังนั้นสคริปต์จึงไม่มีทางแปลง "ได้รับ
+      // byte มาบ้างแล้ว" เป็นเปอร์เซ็นต์ได้ ดูสคริปต์ที่ generate จากหน้า
+      // Software Deploy
       res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": statSync(active.exePath).size });
       createReadStream(active.exePath).pipe(res);
       return;
     }
 
-    // Same per-org bearer-token trust as /agent-download/exe above (the
-    // token this agent's own org holds, not a per-request secret) — see
-    // api/routes.ts's POST /software-uploads for how `id` gets there.
-    // path.basename strips any directory component from the URL segment
-    // before it ever touches the filesystem, so this can only ever resolve
-    // to a file directly inside THIS org's own subdirectory of
-    // customInstallersDir, never anywhere else on disk — and, since the org
-    // is resolved fresh from the presented token on every request (not
-    // trusted from the URL), never another org's subdirectory either, even
-    // if that org's own random UUID-prefixed filename somehow leaked.
+    // เชื่อถือ bearer-token ต่อ org แบบเดียวกับ /agent-download/exe ด้านบน
+    // (token ที่ org ของ agent นี้ถืออยู่ ไม่ใช่ secret ต่อ request) — ดู
+    // POST /software-uploads ใน api/routes.ts ว่า `id` มาถึงตรงนี้ได้อย่างไร
+    // path.basename ตัดส่วน directory ออกจาก URL segment ก่อนที่มันจะแตะ
+    // filesystem เลย ดังนั้นตรงนี้จะ resolve ไปได้แค่ไฟล์ที่อยู่ตรงใน
+    // subdirectory ของ org นี้เองใน customInstallersDir เท่านั้น ไม่มีทางไป
+    // ที่อื่นบนดิสก์ได้ — และเนื่องจาก org ถูก resolve ใหม่จาก token ที่ยื่นมา
+    // ทุก request (ไม่เชื่อจาก URL) จึงไปที่ subdirectory ของ org อื่นไม่ได้
+    // เช่นกัน แม้ว่าชื่อไฟล์ที่มี UUID prefix แบบสุ่มของ org นั้นจะรั่วออกมา
+    // ก็ตาม
     if (req.url?.startsWith("/agent-download/custom/")) {
       const org = resolveOrgByAgentToken(credentials, req.headers["authorization"]);
       if (!org) {
@@ -150,10 +150,10 @@ export function startWsServer(
         cb(false, 401, "unauthorized");
         return;
       }
-      // ws's connection handler below receives this exact same `req`
-      // object as its second argument — stashing the resolved org here is
-      // the standard way to pass data from verifyClient forward, since
-      // there's no other channel between the two.
+      // connection handler ของ ws ด้านล่างจะได้รับ `req` object ตัวเดียวกันนี้
+      // เป็น argument ตัวที่สอง — การเก็บ org ที่ resolve แล้วไว้ตรงนี้คือวิธี
+      // มาตรฐานในการส่งข้อมูลต่อจาก verifyClient เพราะไม่มีช่องทางอื่นระหว่าง
+      // สองจุดนี้
       (info.req as IncomingMessage & { orgCredential?: OrgCredential }).orgCredential = org;
       cb(true);
     },
@@ -163,8 +163,8 @@ export function startWsServer(
 
   wss.on("connection", (socket, req) => {
     const remoteIp = normalizeIp(req.socket.remoteAddress);
-    // Always set — verifyClient rejects the upgrade before this handler
-    // ever runs if no org resolved, so this is never actually undefined.
+    // มีค่าเสมอ — verifyClient จะปฏิเสธ upgrade ก่อนที่ handler นี้จะทำงาน
+    // ถ้าไม่มี org ถูก resolve ดังนั้นค่านี้จึงไม่มีทางเป็น undefined จริงๆ
     const org = (req as IncomingMessage & { orgCredential?: OrgCredential }).orgCredential!;
     const state: ConnState = { agentId: null, isAlive: true, remoteIp, orgId: org.orgId, hmacSecret: org.hmacSecret };
     connStates.set(socket, state);
@@ -175,8 +175,8 @@ export function startWsServer(
     });
 
     socket.on("message", (raw: RawData) => {
-      // A single malformed or adversarial message from one agent must never
-      // take down the process for every other connected agent.
+      // ข้อความที่ผิดรูปแบบหรือมุ่งร้ายจาก agent ตัวเดียวต้องไม่ทำให้
+      // process ล่มสำหรับ agent อื่นที่เชื่อมต่ออยู่ทุกตัว
       try {
         handleMessage(socket, state, raw, registry, history, cfg.notifications, buildRegistry, desiredConfig, cfg.ws.publicHost);
       } catch (err) {
@@ -196,10 +196,11 @@ export function startWsServer(
     });
   });
 
-  // Reap dead connections: ping everyone every interval; anyone that didn't
-  // pong since the last sweep is terminated. This is what keeps "many agents
-  // connected at once, stable" true over hours/days rather than accumulating
-  // half-dead sockets from network blips that never sent a close frame.
+  // เก็บกวาด connection ที่ตายแล้ว: ping ทุกคนทุกช่วงเวลา ใครที่ไม่ pong กลับ
+  // ตั้งแต่รอบกวาดล่าสุดจะถูก terminate นี่คือสิ่งที่ทำให้ "agent จำนวนมาก
+  // เชื่อมต่ออยู่พร้อมกัน อย่างเสถียร" เป็นจริงได้ในระยะหลายชั่วโมง/หลายวัน
+  // แทนที่จะสะสม socket ที่ค้างครึ่งๆ กลางๆ จากปัญหาเครือข่ายที่ไม่เคยส่ง
+  // close frame มา
   const heartbeatTimer = setInterval(() => {
     for (const socket of wss.clients) {
       const state = connStates.get(socket);
@@ -300,14 +301,13 @@ function handleMessage(
   }
 }
 
-// The only place a self_update ever gets constructed and sent — see
-// protocol.ts's SelfUpdatePayload doc comment for why this matters: nothing
-// downstream of the AI console/guardrail can reach this function, it only
-// ever fires from an agent's own heartbeat reporting an older version than
-// what's on disk in downloads/. URL always points back at THIS SAME
-// agent-hub listener (publicHost:cfg.ws.port), never anything
-// server-supplied-per-request, so a compromised signing secret is the only
-// way this could ever be redirected elsewhere.
+// จุดเดียวที่ self_update ถูกสร้างและส่งออกไป — ดู doc comment ของ
+// SelfUpdatePayload ใน protocol.ts ว่าทำไมเรื่องนี้ถึงสำคัญ: ไม่มีอะไรที่อยู่
+// ปลายทางจาก AI console/guardrail เข้าถึงฟังก์ชันนี้ได้เลย มันทำงานเฉพาะตอนที่
+// heartbeat ของ agent เองรายงาน version ที่เก่ากว่าตัวที่อยู่บนดิสก์ใน
+// downloads/ เท่านั้น URL ชี้กลับไปที่ agent-hub listener ตัวเดียวกันนี้เสมอ
+// (publicHost:cfg.ws.port) ไม่มีอะไรที่เซิร์ฟเวอร์ส่งมาต่อ request เลย ดังนั้น
+// secret ที่ใช้เซ็นถูกขโมยไปเท่านั้นที่จะทำให้สิ่งนี้ถูก redirect ไปที่อื่นได้
 function maybeOfferUpdate(
   registry: AgentRegistry,
   orgId: string,
@@ -336,10 +336,10 @@ function maybeOfferUpdate(
   }
 }
 
-// Same isolation reasoning as maybeOfferUpdate above: nothing downstream of
-// the AI console/guardrail can reach this function, it only ever fires from
-// an agent's own heartbeat reporting a config hash that doesn't match
-// agentConfig.ts's desired config.
+// เหตุผลการแยกส่วนเดียวกับ maybeOfferUpdate ด้านบน: ไม่มีอะไรที่อยู่ปลายทาง
+// จาก AI console/guardrail เข้าถึงฟังก์ชันนี้ได้เลย มันทำงานเฉพาะตอนที่
+// heartbeat ของ agent เองรายงาน config hash ที่ไม่ตรงกับ config ที่ต้องการ
+// ใน agentConfig.ts เท่านั้น
 function maybeOfferConfigUpdate(
   registry: AgentRegistry,
   orgId: string,
@@ -371,14 +371,13 @@ function maybeOfferConfigUpdate(
   }
 }
 
-// The agent's first heartbeat or telemetry message is what tells us its
-// identity (agent_id = hostname) — there's no separate handshake payload,
-// matching how the Go agent's transport.Client is implemented. orgId comes
-// from the connection itself (state.orgId, resolved once at connect time
-// from the presented bearer token — see resolveOrgByAgentToken), never from
-// anything agent-supplied, so a compromised/malicious agent has no way to
-// claim membership in a different org than the credential it authenticated
-// with actually belongs to.
+// Heartbeat หรือ telemetry message แรกของ agent คือสิ่งที่บอกตัวตนของมัน
+// (agent_id = hostname) — ไม่มี handshake payload แยกต่างหาก ตรงกับวิธีที่
+// transport.Client ของ Go agent implement ไว้ orgId มาจาก connection เอง
+// (state.orgId ที่ resolve ครั้งเดียวตอน connect จาก bearer token ที่ยื่นมา
+// — ดู resolveOrgByAgentToken) ไม่เคยมาจากอะไรที่ agent ส่งมาเองเลย ดังนั้น
+// agent ที่ถูกแฮ็กหรือมุ่งร้ายจึงไม่มีทางอ้างว่าเป็นสมาชิกของ org อื่นที่ไม่ใช่
+// org ที่ credential ที่มัน authenticate ด้วยจริงๆ เป็นเจ้าของได้
 function identifyIfNeeded(
   socket: WebSocket,
   state: ConnState,
@@ -398,13 +397,13 @@ function identifyIfNeeded(
   log.info({ orgId: state.orgId, agentId, remoteIp: state.remoteIp }, "ws: agent identified");
 }
 
-// WebSocket connections here are direct TCP, not behind a reverse proxy (see
-// this file's own TLS-termination comment), so req.socket.remoteAddress is
-// the real peer address — no X-Forwarded-For handling needed. Node reports
-// an IPv4 peer as an IPv6-mapped address ("::ffff:192.168.10.171") on a
-// dual-stack socket; stripped here so both the private-IP check in
-// geolocation/ipGeo.ts and the plain display value work with the address a
-// human actually expects to see.
+// WebSocket connection ที่นี่เป็น TCP ตรง ไม่ได้อยู่หลัง reverse proxy (ดู
+// comment เรื่อง TLS-termination ของไฟล์นี้เอง) ดังนั้น
+// req.socket.remoteAddress คือ address ของ peer จริง — ไม่ต้องจัดการ
+// X-Forwarded-For Node รายงาน IPv4 peer เป็น IPv6-mapped address
+// ("::ffff:192.168.10.171") บน dual-stack socket; ตัดส่วนนี้ออกที่นี่เพื่อให้
+// ทั้งการเช็ค private-IP ใน geolocation/ipGeo.ts และค่าที่แสดงผลธรรมดาทำงาน
+// กับ address ที่คนดูคาดหวังจะเห็นจริงๆ
 function normalizeIp(addr: string | undefined): string | null {
   if (!addr) return null;
   return addr.startsWith("::ffff:") ? addr.slice(7) : addr;

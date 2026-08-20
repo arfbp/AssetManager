@@ -1,89 +1,104 @@
 # OptiFleet AI Dashboard
 
-Next.js (App Router) + Tailwind CSS frontend for IT support and leadership:
-real-time endpoint monitoring, an AI natural-language command console, and a
-per-device task/process manager. Talks to `../server` (the Central Server) —
-nothing in this app calls an LLM or an agent directly.
+Frontend ที่ใช้ Next.js (App Router) + Tailwind CSS สำหรับทีมไอทีและผู้บริหาร:
+เฝ้าดูสถานะอุปกรณ์แบบเรียลไทม์, คอนโซลคำสั่งภาษาธรรมชาติด้วย AI, และตัวจัดการ
+task/process รายเครื่อง คุยกับ `../server` (Central Server) เท่านั้น —
+ไม่มีส่วนไหนในแอปนี้ที่เรียก LLM หรือเอเจนต์โดยตรง
 
-## Running
+## การรัน
 
 ```powershell
 cd frontend
 npm install
-cp .env.local.example .env.local   # then edit — must match server/.env
+cp .env.local.example .env.local   # แล้วแก้ค่า — ต้องตรงกับ server/.env
 npm run dev
 ```
 
-Node.js and npm were not available in the environment this was written in —
-install Node 20+ and run `npm run typecheck` once dependencies are installed.
-`next-env.d.ts` is generated automatically the first time you run `npm run
-dev` or `npm run build`; it's normal for it to be absent before that.
+ต้องมี Node 20+ ติดตั้งไว้ก่อน แล้วรัน `npm run typecheck` หลังติดตั้ง
+dependency เสร็จ `next-env.d.ts` จะถูกสร้างอัตโนมัติตอนรัน `npm run dev`
+หรือ `npm run build` ครั้งแรก เป็นเรื่องปกติที่ไฟล์นี้จะยังไม่มีก่อนหน้านั้น
 
-The two `NEXT_PUBLIC_*` URLs in `.env.local` must point at wherever
-`server/` is actually listening (`OPTIFLEET_HTTP_PORT`) — see
-`.env.local.example`'s comments. There's no token to match anymore: the
-dashboard logs in against the server's real accounts (`src/lib/session.ts`,
-`server/src/auth/`) instead of a shared secret baked into the build.
+URL ทั้งสองตัวที่ขึ้นต้นด้วย `NEXT_PUBLIC_*` ใน `.env.local` ต้องชี้ไปที่
+ตำแหน่งที่ `server/` กำลังรังฟังอยู่จริง (`OPTIFLEET_HTTP_PORT`) — ดูคำอธิบาย
+ใน `.env.local.example` ไม่มี token ให้ต้องจำคู่กันอีกต่อไป: แดชบอร์ดล็อกอิน
+กับบัญชีจริงของเซิร์ฟเวอร์ (`src/lib/session.ts`, `server/src/auth/`) แทนที่
+จะเป็น secret ที่ฝังไว้ตอน build
 
-## Where each requirement lives
+## แต่ละความสามารถอยู่ตรงไหน
 
-1. **Real-time endpoint monitoring** — `src/components/endpoints/` (`EndpointGrid` + `EndpointCard`), fed by `src/hooks/useDashboardSocket.ts`. This opens one WebSocket to the server's `/ws/dashboard` endpoint and receives push updates (`agent_update`, `history_entry`) — there is no polling loop anywhere in this app. CPU/RAM/Disk render as `Meter` components (`src/components/meters/Meter.tsx`); Online/Offline as `StatusBadge`.
-2. **AI chat command console + history log** — `src/components/chat/ChatConsole.tsx` (natural-language input, calls `POST /api/command`, renders the server's dispatched/needs-confirmation/blocked outcome) and `src/components/history/CommandHistoryPanel.tsx` (every dispatched command — chat-originated or button-originated — with a live success/fail status, also pushed over the same WebSocket).
-3. **Task & process manager** — `src/components/process/ProcessManagerDrawer.tsx`, opened by clicking any endpoint card. Two tabs: **Live** lists the device's processes from its last telemetry snapshot (with a **Force Close** button per process and an **AI suggestion** button for one-click auto remediation) plus a **Connected devices** panel (USB/printers/monitors currently attached, grouped by type — internal/telemetry/devices_*.go on the agent side); **History** is the CPU/RAM/Disk trend chart, `src/components/history/HistoryChart.tsx`.
+1. **เฝ้าดูสถานะอุปกรณ์แบบเรียลไทม์** — `src/components/endpoints/`
+   (`EndpointGrid` + `EndpointCard`) ป้อนข้อมูลจาก
+   `src/hooks/useDashboardSocket.ts` เปิด WebSocket เส้นเดียวไปยัง
+   `/ws/dashboard` ของเซิร์ฟเวอร์และรับอัปเดตแบบ push (`agent_update`,
+   `history_entry`) — ไม่มี loop polling ที่ไหนในแอปนี้เลย CPU/RAM/Disk
+   render เป็น component `Meter` (`src/components/meters/Meter.tsx`);
+   Online/Offline เป็น `StatusBadge`
+2. **คอนโซลคำสั่งแชท AI + log ประวัติ** — `src/components/chat/ChatConsole.tsx`
+   (รับข้อความภาษาธรรมชาติ เรียก `POST /api/command` แสดงผลลัพธ์จาก
+   เซิร์ฟเวอร์ว่าส่งแล้ว/ต้อง confirm/ถูกบล็อก) และ
+   `src/components/history/CommandHistoryPanel.tsx` (ทุกคำสั่งที่ส่งออกไป —
+   จากแชทหรือจากปุ่ม — พร้อมสถานะสำเร็จ/ล้มเหลวแบบสด push ผ่าน WebSocket
+   เส้นเดียวกัน)
+3. **ตัวจัดการ Task และ Process** — `src/components/process/ProcessManagerDrawer.tsx`
+   เปิดโดยคลิกที่การ์ดอุปกรณ์ใดก็ได้ มีสองแท็บ: **Live** แสดงรายการ process
+   ของอุปกรณ์จาก telemetry snapshot ล่าสุด (มีปุ่ม **Force Close** ต่อ
+   process และปุ่ม **AI suggestion** สำหรับ remediation แบบคลิกเดียว) พร้อม
+   panel **อุปกรณ์ที่เชื่อมต่ออยู่** (USB/เครื่องพิมพ์/จอที่ต่ออยู่ตอนนี้
+   จัดกลุ่มตามประเภท — ฝั่งเอเจนต์คือ internal/telemetry/devices_*.go);
+   **History** คือกราฟแนวโน้ม CPU/RAM/Disk, `src/components/history/HistoryChart.tsx`
 
-## Design decisions worth knowing
+## แนวคิดการออกแบบที่ควรรู้
 
-**Colors come from the dataviz skill's validated reference palette**, not
-picked by eye — see `src/app/globals.css` for the token definitions and
-`tailwind.config.ts` for how they're exposed to Tailwind classes
-(`bg-status-critical`, `text-ink-secondary`, etc.). Status colors
-(good/warning/serious→unused here/critical) are the palette's fixed status
-role, reserved for state and never reused for anything else. Every status
-indicator pairs a color with an icon-equivalent (a dot) *and* a text label —
-color is never the only signal, both for accessibility and because a
-red-only "something's wrong" dot doesn't tell an admin what's actually
-wrong.
+**สีทั้งหมดมาจาก palette อ้างอิงที่กำหนดไว้ตายตัว** ไม่ได้เลือกเอาตามใจ —
+ดู `src/app/globals.css` สำหรับนิยาม token และ `tailwind.config.ts` ว่าถูก
+เปิดให้ใช้เป็น class ของ Tailwind อย่างไร (`bg-status-critical`,
+`text-ink-secondary` ฯลฯ) สีสถานะ (ปกติ/เตือน/severe—ไม่ได้ใช้ในหน้านี้/
+วิกฤต) เป็น role ตายตัวของ palette สงวนไว้สำหรับแสดงสถานะเท่านั้น ไม่นำไปใช้
+ซ้ำกับอย่างอื่น ทุกตัวบ่งชี้สถานะจับคู่สีกับไอคอน (จุด) *และ* label ข้อความ
+เสมอ — สีไม่ใช่สัญญาณเดียว ทั้งเพื่อการเข้าถึงและเพราะจุดสีแดงอย่างเดียวไม่
+บอกผู้ดูแลว่าอะไรผิดพลาดจริงๆ
 
-**Meter thresholds match the Go agent's own alert trigger.** `src/lib/format.ts`'s
-`severityForPercent()` flips to "critical" at 85% — the exact CPU/RAM
-threshold that makes `internal/telemetry/poller.go` on the agent itself
-switch to its 10-second alert-mode polling. The dashboard's red state and
-the agent's own "something's wrong, look closer" state are the same number,
-not two independently-chosen thresholds that could drift apart.
+**เกณฑ์ของ Meter ตรงกับจุดแจ้งเตือนของเอเจนต์ Go เอง** ฟังก์ชัน
+`severityForPercent()` ใน `src/lib/format.ts` จะเปลี่ยนเป็น "critical" ที่ 85%
+— เกณฑ์ CPU/RAM เดียวกันเป๊ะกับที่ทำให้ `internal/telemetry/poller.go` ฝั่ง
+เอเจนต์เองสลับไปโหมด alert แบบ poll ทุก 10 วินาที สถานะสีแดงบนแดชบอร์ดกับ
+สถานะ "มีอะไรผิดปกติ ต้องดูใกล้ๆ" ของเอเจนต์เองคือตัวเลขเดียวกัน ไม่ใช่
+เกณฑ์สองชุดที่เลือกแยกกันแล้วอาจเพี้ยนไปคนละทาง
 
-**"One-click AI auto remediation" is deliberately two clicks, not one.**
-The AI suggestion button (`POST /api/agents/:id/suggest-remediation`) only
-ever returns a recommendation — reasoning and a risk note, never an action
-taken. Applying it is a separate, explicit "Apply: force close" button that
-goes through the exact same path as manually clicking "Force close" on any
-other process. A single button that both asks the AI and kills the process
-in one click would mean one bad or hallucinated suggestion executes with no
-human in between — see the same reasoning applied server-side in
-`server/README.md`'s notes on the guardrail and confirmation flow. The
-"Force close" button itself still has a native `confirm()` prompt before it
-sends anything, since force-closing a process can lose unsaved work
-regardless of whether a human or the AI picked the target.
+**"One-click AI auto remediation" ตั้งใจให้เป็นสองคลิก ไม่ใช่คลิกเดียว**
+ปุ่ม AI suggestion (`POST /api/agents/:id/suggest-remediation`) คืนแค่คำแนะนำ
+เท่านั้น — เหตุผลและ risk note ไม่เคยลงมือทำเอง การนำไปใช้จริงเป็นปุ่มแยก
+ต่างหากชัดเจน "Apply: force close" ที่ผ่านเส้นทางเดียวกันเป๊ะกับการคลิก
+"Force close" ด้วยมือกับ process อื่นใด ถ้าปุ่มเดียวทั้งถาม AI และฆ่า
+process พร้อมกันจะหมายความว่าคำแนะนำที่ผิดหรือหลอน (hallucinate) หนึ่งครั้ง
+จะถูกดำเนินการโดยไม่มีมนุษย์คั่นกลาง — เหตุผลเดียวกันนี้ใช้ฝั่งเซิร์ฟเวอร์ด้วย
+ดูหมายเหตุเรื่อง guardrail และ confirmation flow ใน `server/README.md`
+ปุ่ม "Force close" เองยังมี prompt `confirm()` แบบ native ก่อนส่งอะไรออกไป
+เพราะการ force-close process อาจทำให้งานที่ยังไม่บันทึกหายได้ ไม่ว่ามนุษย์
+หรือ AI จะเป็นคนเลือกเป้าหมาย
 
-**Theme is a selection, not just a media-query flip.** `src/components/theme/ThemeToggle.tsx`
-cycles light → dark → follow-system, persisted to `localStorage`; the inline
-script in `src/app/layout.tsx`'s `<head>` applies the stored choice before
-first paint so there's no flash of the wrong theme.
+**ธีมเป็นการเลือก ไม่ใช่แค่ media-query สลับสี**
+`src/components/theme/ThemeToggle.tsx` วนรอบ light → dark → follow-system
+เก็บค่าไว้ใน `localStorage` สคริปต์ inline ใน `<head>` ของ
+`src/app/layout.tsx` จะใช้ค่าที่เก็บไว้ก่อน paint แรก จึงไม่มีการกระพริบ
+ธีมผิดให้เห็น
 
-## What's intentionally not implemented yet
+## สิ่งที่ยังไม่ได้ทำโดยตั้งใจ
 
-- **SSO/OAuth login.** Accounts are username+password only (`src/components/auth/`,
-  `server/src/auth/`), admin-created via `npm run user:create` — no external
-  identity provider integration. `requestedBy` on every dispatched command is
-  the authenticated username, not client-supplied, so this is a real
-  verified identity; there's just no SSO in front of it yet.
-- **A `run_script` submission UI.** The server's guardrail refuses to
-  dispatch `run_script` from the natural-language path at all (see
-  `server/src/security/guardrail.ts`), so there's nothing for this frontend
-  to expose yet — a future "submit a reviewed script" flow would need its
-  own explicit, human-authored form, not a chat message.
-- **Historical telemetry / trend charts.** The endpoint cards and process
-  drawer show only the latest snapshot — there's no time-series storage on
-  the server yet to chart against. Adding one is a server-side change
-  first (see `server/README.md`'s "What's intentionally not implemented
-  yet"), then a chart here, per the dataviz skill's guidance, once there's
-  real time-series data to plot.
+- **ล็อกอินแบบ SSO/OAuth** บัญชีเป็น username+password เท่านั้น
+  (`src/components/auth/`, `server/src/auth/`) สร้างโดยแอดมินผ่าน
+  `npm run user:create` — ยังไม่เชื่อมกับ identity provider ภายนอก
+  `requestedBy` บนทุกคำสั่งที่ส่งออกไปคือ username ที่ยืนยันตัวตนแล้ว
+  ไม่ใช่ค่าที่ client ใส่มาเอง ดังนั้นเป็นตัวตนที่ verify จริง แค่ยังไม่มี
+  SSO อยู่ด้านหน้าเท่านั้น
+- **UI สำหรับส่งสคริปต์ `run_script`** guardrail ฝั่งเซิร์ฟเวอร์ปฏิเสธการ
+  ส่ง `run_script` จากช่องทางภาษาธรรมชาติเสมอ (ดู
+  `server/src/security/guardrail.ts`) จึงยังไม่มีอะไรให้ frontend นี้แสดง
+  — flow "ส่งสคริปต์ที่ผ่านการ review" ในอนาคตต้องมีฟอร์มที่มนุษย์กรอกเอง
+  ชัดเจน ไม่ใช่ข้อความแชท
+- **กราฟ telemetry / แนวโน้มย้อนหลัง** การ์ดอุปกรณ์และ process drawer แสดง
+  แค่ snapshot ล่าสุด — ยังไม่มีที่เก็บข้อมูลแบบ time-series ฝั่งเซิร์ฟเวอร์
+  ให้ plot การเพิ่มส่วนนี้ต้องแก้ฝั่งเซิร์ฟเวอร์ก่อน (ดู "สิ่งที่ยังไม่ได้ทำ
+  โดยตั้งใจ" ใน `server/README.md`) แล้วค่อยทำกราฟตรงนี้ทีหลังเมื่อมีข้อมูล
+  time-series จริงให้ plot
+</content>

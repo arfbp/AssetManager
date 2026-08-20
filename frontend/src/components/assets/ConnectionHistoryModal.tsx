@@ -10,11 +10,11 @@ interface ConnectionHistoryModalProps {
   onClose: () => void;
 }
 
-// Every computer this peripheral asset has actually been connected through
-// over time (server/src/assets/connectionHistoryStore.ts) — distinct from
-// the asset's own parentAgentId field, which only ever remembers the most
-// recent one. Opens on demand rather than being preloaded with the asset
-// list, since most assets never need it looked at.
+// รายการคอมพิวเตอร์ทุกเครื่องที่ asset ประเภทอุปกรณ์ต่อพ่วงนี้เคยเชื่อมต่อ
+// ด้วยตามช่วงเวลา (server/src/assets/connectionHistoryStore.ts) — ต่างจาก
+// field parentAgentId ของ asset เองที่จำได้แค่เครื่องล่าสุด โหลดข้อมูล
+// เฉพาะตอนเปิด modal ไม่ preload พร้อม asset list เพราะส่วนใหญ่ไม่มีใคร
+// ต้องมาดูประวัตินี้
 export function ConnectionHistoryModal({ assetTag, onClose }: ConnectionHistoryModalProps) {
   const [entries, setEntries] = useState<ConnectionHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);

@@ -7,22 +7,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// PollerConfig controls the normal/alert cadence and the thresholds that
-// switch between them.
+// PollerConfig คุมรอบความถี่ normal/alert และ threshold ที่ใช้สลับระหว่าง
+// สองโหมดนั้น
 type PollerConfig struct {
 	NormalInterval    time.Duration
 	AlertInterval     time.Duration
 	CPUThreshold      float64
 	MemThreshold      float64
-	RecoveryStreak    int // consecutive normal readings needed to exit alert mode
+	RecoveryStreak    int // จำนวนค่าที่อ่านได้ปกติติดต่อกันที่ต้องมีก่อนจะออกจาก alert mode
 	TopNProcesses     int
 }
 
-// Poller drives telemetry collection on a dynamic interval: it wakes on
-// NormalInterval by default, and — the moment a reading crosses the CPU/mem
-// threshold — drops to AlertInterval until RecoveryStreak consecutive
-// readings come back under threshold (hysteresis avoids mode-flapping when a
-// metric hovers right at the line).
+// Poller ขับเคลื่อนการเก็บ telemetry ด้วย interval แบบ dynamic: ปกติจะตื่น
+// ตาม NormalInterval และทันทีที่ค่าที่อ่านได้ข้าม threshold ของ CPU/mem —
+// จะลดลงมาเป็น AlertInterval จนกว่าจะมีค่าที่อ่านได้ปกติติดต่อกันครบ
+// RecoveryStreak ครั้ง (hysteresis ช่วยไม่ให้โหมดสลับไปมาถี่ ๆ เมื่อค่า
+// metric แกว่งอยู่ใกล้เส้น threshold พอดี)
 type Poller struct {
 	cfg       PollerConfig
 	collector *Collector
@@ -41,14 +41,13 @@ func NewPoller(cfg PollerConfig, log zerolog.Logger, onSnapshot func(Snapshot)) 
 	}
 }
 
-// TriggerNow requests an out-of-cycle collection+send as soon as Run's loop
-// next wakes, instead of waiting up to NormalInterval (up to several
-// minutes) — wired to fire right after a command that visibly changes what
-// the next snapshot would show (kill_process, clean_temp), so the dashboard
-// reflects it immediately rather than looking stale. Non-blocking and safe
-// to call from another goroutine (executor.Handle runs on the transport's
-// read loop): if a trigger is already pending, this is just a no-op rather
-// than blocking the caller.
+// TriggerNow ขอให้เก็บ+ส่งข้อมูลนอกรอบทันทีที่ loop ของ Run ตื่นครั้งถัดไป
+// แทนที่จะรอจน NormalInterval (นานได้หลายนาที) — ต่อสายให้ยิงทันทีหลัง
+// คำสั่งที่เปลี่ยนสิ่งที่ snapshot รอบถัดไปจะแสดงอย่างเห็นได้ชัด
+// (kill_process, clean_temp) เพื่อให้ dashboard สะท้อนผลทันที แทนที่จะดู
+// ค้าง non-blocking และเรียกจาก goroutine อื่นได้อย่างปลอดภัย
+// (executor.Handle รันอยู่บน read loop ของ transport): ถ้ามี trigger
+// ค้างอยู่แล้ว ตรงนี้ก็แค่ no-op ไม่บล็อก caller
 func (p *Poller) TriggerNow() {
 	select {
 	case p.trigger <- struct{}{}:
@@ -56,14 +55,14 @@ func (p *Poller) TriggerNow() {
 	}
 }
 
-// Run blocks until ctx is cancelled. It uses a single timer whose duration is
-// reset after every reading, rather than two competing tickers, so the mode
-// switch takes effect on the very next wake-up.
+// Run block อยู่จนกว่า ctx จะถูก cancel ใช้ timer ตัวเดียวที่ reset
+// duration หลังทุกครั้งที่อ่านค่า แทนที่จะใช้ ticker สองตัวแข่งกัน เพื่อให้
+// การสลับโหมดมีผลตั้งแต่การตื่นครั้งถัดไปทันที
 func (p *Poller) Run(ctx context.Context) {
 	mode := ModeNormal
 	normalStreak := 0
 
-	timer := time.NewTimer(0) // fire immediately on start
+	timer := time.NewTimer(0) // ยิงทันทีตอนเริ่ม
 	defer timer.Stop()
 
 	collect := func() {
@@ -105,12 +104,11 @@ func (p *Poller) Run(ctx context.Context) {
 			p.log.Info().Msg("poller: shutting down")
 			return
 		case <-p.trigger:
-			// The regular timer hasn't fired yet — stop it and drain any
-			// racing tick before collecting out-of-cycle, then restart the
-			// normal cadence fresh from now (see time.Timer.Reset's own
-			// docs on why a bare Reset without Stop+drain is unsafe here,
-			// unlike the timer.C branch below where the channel read has
-			// already drained it).
+			// timer ปกติยังไม่ยิง — หยุดมันแล้ว drain tick ที่อาจแข่งกันอยู่
+			// ก่อนเก็บข้อมูลนอกรอบ แล้วเริ่มรอบปกติใหม่จากตอนนี้ (ดู doc ของ
+			// time.Timer.Reset เองว่าทำไมการ Reset เฉย ๆ โดยไม่ Stop+drain
+			// ก่อนถึงไม่ปลอดภัยตรงนี้ ต่างจาก branch timer.C ด้านล่างที่การ
+			// อ่าน channel ได้ drain ไปแล้ว)
 			if !timer.Stop() {
 				select {
 				case <-timer.C:

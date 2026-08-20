@@ -1,6 +1,6 @@
-// Loads and validates environment configuration. Fails closed: missing
-// security-relevant settings throw at startup rather than silently running
-// with defaults an operator didn't choose.
+// โหลดและตรวจสอบ environment configuration แบบ fail closed: ถ้าตั้งค่าด้าน
+// security ที่จำเป็นขาดไป จะ throw ตั้งแต่ startup แทนที่จะรันต่อแบบเงียบๆ
+// ด้วยค่า default ที่ operator ไม่ได้เลือกเอง
 import "dotenv/config";
 import type { NotifyConfig } from "./notifications/types.js";
 
@@ -21,81 +21,84 @@ export interface Config {
     port: number;
     tlsCertPath: string | null;
     tlsKeyPath: string | null;
-    /** host:port agents should use to reach GET /agent-download/exe on this
-     * same agent-hub listener (self-update — see ws/server.ts) — the
-     * externally-reachable address, which the server has no way to know on
-     * its own (it only knows the port it's listening on, not what host an
-     * agent out on the internet actually dials to reach it). Must match
-     * whatever host agent.yaml's server.url already points at. */
+    /** host:port ที่ agent ควรใช้เพื่อเข้าถึง GET /agent-download/exe บน
+     * agent-hub listener ตัวเดียวกันนี้ (self-update — ดู ws/server.ts) —
+     * เป็น address ที่เข้าถึงได้จากภายนอก ซึ่งเซิร์ฟเวอร์ไม่มีทางรู้เองได้
+     * (รู้แค่ port ที่ตัวเอง listen อยู่ ไม่รู้ว่า agent ที่อยู่นอกอินเทอร์เน็ต
+     * จะ dial เข้ามาที่ host ไหน) ต้องตรงกับที่ server.url ใน agent.yaml ชี้ไว้ */
     publicHost: string;
   };
   http: {
     port: number;
-    /** Origins the browser dashboard is allowed to call the REST API from (CORS). */
+    /** Origin ที่ dashboard บนเบราว์เซอร์เรียก REST API ตัวนี้ได้ (CORS) */
     dashboardOrigins: string[];
-    /** Suffix (e.g. ".27-254-142-51.sslip.io" today, ".optifleet.ai" once
-     * Phase 6's real domain is live) that ANY org's subdomain is allowed to
-     * call the API from, on top of the fixed dashboardOrigins list above —
-     * one shared frontend build serves every org's subdomain (see
-     * frontend/src/lib/session.ts's currentOrgSubdomain, which needs the
-     * matching NEXT_PUBLIC_ORG_DOMAIN_SUFFIX at build time), so hand-
-     * listing each org's exact origin here isn't workable. Null disables
-     * this (every non-listed origin still gets rejected as normal). */
+    /** ส่วนท้าย (เช่น ".27-254-142-51.sslip.io" ตอนนี้ หรือ ".optifleet.ai"
+     * เมื่อโดเมนจริงของ Phase 6 พร้อมใช้งาน) ที่ subdomain ของ org ไหนก็ได้
+     * เรียก API ได้ นอกเหนือจาก dashboardOrigins ที่ fix ไว้ด้านบน — frontend
+     * build เดียวเสิร์ฟให้ทุก subdomain ของทุก org (ดู currentOrgSubdomain ใน
+     * frontend/src/lib/session.ts ซึ่งต้องใช้ NEXT_PUBLIC_ORG_DOMAIN_SUFFIX
+     * ที่ตรงกันตอน build) ดังนั้นการ list origin ของแต่ละ org แบบเจาะจงทีละตัว
+     * จึงทำไม่ไหว ใส่ null เพื่อปิดฟีเจอร์นี้ (origin ที่ไม่อยู่ใน list ก็ยัง
+     * ถูก reject ตามปกติ) */
     orgDomainSuffix: string | null;
-    /** TLS for the browser-facing REST API + dashboard WebSocket
-     * (index.ts/ws/dashboardServer.ts) — previously plain HTTP/WS
-     * regardless of this setting, unlike the agent hub which always had
-     * its own TLS option. Defaults to the SAME cert/key already configured
-     * for the agent hub (`ws.tlsCertPath`/`tlsKeyPath`) if the
-     * OPTIFLEET_HTTP_TLS_* vars aren't set separately — one cert covering
-     * both is the common case, but a real deployment terminating the
-     * browser side behind a public domain's cert while agents use an
-     * internal one can still point these at a different file. */
+    /** TLS สำหรับ REST API + dashboard WebSocket ที่ browser เรียก
+     * (index.ts/ws/dashboardServer.ts) — เดิมเป็น plain HTTP/WS เสมอไม่ว่า
+     * ตั้งค่านี้ไว้อย่างไร ต่างจาก agent hub ที่มี TLS option ของตัวเองมาตั้งแต่
+     * แรก ค่า default จะใช้ cert/key ชุดเดียวกับที่ตั้งไว้ให้ agent hub แล้ว
+     * (`ws.tlsCertPath`/`tlsKeyPath`) ถ้าไม่ได้ตั้งตัวแปร
+     * OPTIFLEET_HTTP_TLS_* แยกไว้ — ใช้ cert เดียวคลุมทั้งคู่คือ case ปกติ
+     * แต่ deployment จริงที่ terminate ฝั่ง browser หลังโดเมน public ด้วย cert
+     * คนละใบ ในขณะที่ agent ใช้ cert internal ก็ยังชี้ตัวแปรพวกนี้ไปคนละไฟล์ได้ */
     tlsCertPath: string | null;
     tlsKeyPath: string | null;
   };
   hmacSecret: string;
   deviceGroupsPath: string;
-  /** Every agent build ever pushed, plus which one is "active" — see
-   * agentBuilds.ts's AgentBuildRegistry. Rolling back to an older version
-   * or rolling forward to a newer one is just changing activeVersion; no
-   * server restart needed. */
+  /** Agent build ทุกตัวที่เคย push มา บวกกับตัวที่ "active" อยู่ — ดู
+   * AgentBuildRegistry ใน agentBuilds.ts การ rollback ไปเวอร์ชันเก่า หรือ
+   * roll-forward ไปเวอร์ชันใหม่กว่า คือแค่เปลี่ยน activeVersion ไม่ต้อง
+   * restart เซิร์ฟเวอร์ */
   agentBuildsDir: string;
-  /** Fleet's desired agent.yaml — see agentConfig.ts's loadDesiredAgentConfig
-   * and ws/registry.ts's needsConfigUpdate. Optional: no file there yet just
-   * means config-push convergence stays disabled, not a startup failure. */
+  /** agent.yaml ที่ fleet ต้องการ — ดู loadDesiredAgentConfig ใน
+   * agentConfig.ts และ needsConfigUpdate ใน ws/registry.ts เป็น optional:
+   * ถ้ายังไม่มีไฟล์ก็แค่ปิดการ convergence ของ config-push ไม่ใช่ startup
+   * failure */
   agentConfigTemplatePath: string;
-  /** Where admin-uploaded custom installers (Software Deploy page's "upload
-   * your own installer" path) are stored — see api/routes.ts's
-   * POST /software-uploads and ws/server.ts's GET /agent-download/custom/:id.
-   * Distinct from the per-org installer .zip (that's the agent's own build
-   * artifact, generated on demand); this directory holds arbitrary
-   * third-party installer files an admin has chosen to push to a device. */
+  /** ที่เก็บ installer ที่ admin อัปโหลดเอง (จากหน้า Software Deploy ปุ่ม
+   * "upload your own installer") — ดู POST /software-uploads ใน
+   * api/routes.ts และ GET /agent-download/custom/:id ใน ws/server.ts
+   * คนละส่วนกับไฟล์ installer .zip ของแต่ละ org (อันนั้นเป็น build artifact
+   * ของ agent เอง สร้างตามคำขอ); โฟลเดอร์นี้เก็บไฟล์ installer ของ third-party
+   * ที่ admin เลือก push ไปยังเครื่องเอง */
   customInstallersDir: string;
-  /** Per-org cap on customInstallersDir's total accumulated size (not a
-   * per-file cap — POST /software-uploads already caps a single file at
-   * 300MB regardless of this setting). Without this, one org uploading
-   * enough installers over time could fill the VPS disk for every tenant. */
+  /** เพดานขนาดรวมของ customInstallersDir ต่อ org (ไม่ใช่เพดานต่อไฟล์ —
+   * POST /software-uploads เพดานไฟล์เดียวไว้ที่ 300MB อยู่แล้วไม่ว่าค่านี้
+   * จะเป็นเท่าไหร่) ถ้าไม่มีค่านี้ org เดียวอัปโหลด installer สะสมไปเรื่อยๆ
+   * อาจทำให้ดิสก์ของ VPS เต็มจนกระทบทุก tenant */
   customInstallersMaxBytesPerOrg: number;
-  /** Everything a per-org installer .zip needs EXCEPT the agent binary
-   * itself (that always comes fresh from agentBuildsDir's active build, so
-   * a generated installer never ships a stale exe) and the credentials
-   * (generated per-org, never stored on disk) — agent.yaml, nssm.exe,
-   * optifleet-cert.pem, README.txt, RUN-ME.bat, and install.ps1 as a
-   * template with an `__ENV_BLOCK__` placeholder. See
-   * orgs/installerGenerator.ts and GET /api/orgs/:id/installer. */
+  /** โลโก้ที่ org กำหนดเองได้ org ละหนึ่งไฟล์ คีย์ด้วย org id ไม่มีนามสกุลไฟล์
+   * (content-type จริงเก็บอยู่ใน organizations.logo_content_type ไม่ได้เดา
+   * จากชื่อไฟล์) — ดู GET/POST/DELETE /orgs/:id/logo */
+  orgLogosDir: string;
+  /** ทุกอย่างที่ installer .zip ของแต่ละ org ต้องใช้ ยกเว้นตัว agent binary
+   * เอง (อันนั้นดึงมาจาก active build ใน agentBuildsDir สดใหม่เสมอ ดังนั้น
+   * installer ที่สร้างขึ้นจะไม่มีทาง ship exe ที่เก่าค้าง) และ credentials
+   * (สร้างแยกต่อ org ไม่เก็บลงดิสก์) — agent.yaml, nssm.exe,
+   * optifleet-cert.pem, README.txt, RUN-ME.bat และ install.ps1 เป็น template
+   * ที่มี placeholder `__ENV_BLOCK__` ดู orgs/installerGenerator.ts และ
+   * GET /api/orgs/:id/installer */
   agentInstallerTemplateDir: string;
   enableRunScriptDispatch: boolean;
   isProduction: boolean;
-  /** Postgres connection string. Required — user accounts and sessions
-   * (src/auth/) are stored in Postgres, not memory, so real login has
-   * nowhere to live without it. Telemetry/command history persistence
-   * (src/db/persistence.ts) rides along on the same connection. */
+  /** Connection string ของ Postgres จำเป็นต้องมี — บัญชีผู้ใช้และ session
+   * (src/auth/) เก็บอยู่ใน Postgres ไม่ใช่หน่วยความจำ ดังนั้นถ้าไม่มีค่านี้
+   * ระบบ login จริงจะไม่มีที่เก็บเลย ประวัติ telemetry/command (src/db/
+   * persistence.ts) ก็ใช้ connection เดียวกันนี้ */
   databaseUrl: string;
-  /** Outbound alert notifications (Slack/Teams/email) — see notifications/.
-   * Every channel is independently optional; all-unset just means nothing
-   * is sent anywhere and alerts only show up in the dashboard, same as
-   * before this existed. */
+  /** การแจ้งเตือนออกไปภายนอก (Slack/Teams/email) — ดู notifications/
+   * แต่ละ channel เป็น optional แยกอิสระจากกัน ถ้าไม่ตั้งค่าเลยสักตัวก็แค่
+   * ไม่มีอะไรถูกส่งออกไปไหน แจ้งเตือนจะโชว์แค่ใน dashboard เหมือนก่อนมี
+   * ฟีเจอร์นี้ */
   notifications: NotifyConfig;
 }
 
@@ -145,6 +148,7 @@ export function loadConfig(): Config {
     agentConfigTemplatePath: optional("OPTIFLEET_AGENT_CONFIG_TEMPLATE_PATH", "./config/agent-config-template.yaml"),
     customInstallersDir: optional("OPTIFLEET_CUSTOM_INSTALLERS_DIR", "./downloads/custom-installers"),
     customInstallersMaxBytesPerOrg: Number(optional("OPTIFLEET_CUSTOM_INSTALLERS_MAX_MB_PER_ORG", "2048")) * 1024 * 1024,
+    orgLogosDir: optional("OPTIFLEET_ORG_LOGOS_DIR", "./uploads/org-logos"),
     agentInstallerTemplateDir: optional("OPTIFLEET_AGENT_INSTALLER_TEMPLATE_DIR", "./agent-installer-template"),
     enableRunScriptDispatch: optional("OPTIFLEET_ENABLE_RUN_SCRIPT_DISPATCH", "false") === "true",
     isProduction,

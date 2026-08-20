@@ -1,8 +1,7 @@
--- Multi-tenant migration, phase 1: the organizations table itself.
--- The current production fleet becomes org #1, a normal row (not
--- special-cased in application code) — a fixed UUID so every later
--- backfill migration can reference it as a literal constant without a
--- lookup.
+-- Multi-tenant migration เฟส 1: ตาราง organizations เอง
+-- Fleet การใช้งานจริงปัจจุบันกลายเป็น org #1 เป็นแถวปกติ (ไม่ special-case
+-- ในโค้ดฝั่งแอป) — ใช้ UUID ตายตัวเพื่อให้ migration backfill ทุกตัวหลังจากนี้
+-- อ้างอิงถึงมันเป็น literal constant ได้โดยไม่ต้อง lookup
 CREATE TABLE organizations (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name       TEXT NOT NULL,

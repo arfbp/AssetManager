@@ -1,8 +1,9 @@
-// Fans one NotificationEvent out to every configured channel. Each channel
-// is independently try/caught — a dead Slack webhook or unreachable SMTP
-// host must never stop the other channels from firing, and must never
-// throw back into the caller (alert/incident handling paths that call this
-// are fire-and-forget, same as db/persistence.ts's own writes).
+// กระจาย NotificationEvent หนึ่งอันไปยังทุก channel ที่ตั้งค่าไว้ แต่ละ
+// channel try/catch แยกจากกัน — Slack webhook ที่ตายหรือ SMTP host ที่
+// เข้าไม่ถึงต้องไม่ทำให้ channel อื่นหยุดทำงานตาม และต้อง throw กลับไปหา
+// ผู้เรียกไม่ได้เด็ดขาด (path ที่เรียกใช้ฟังก์ชันนี้ในการจัดการ
+// alert/incident เป็นแบบ fire-and-forget เหมือนกับที่ db/persistence.ts
+// เขียนข้อมูลของตัวเอง)
 import { log } from "../logger.js";
 import type { NotifyConfig, NotificationEvent } from "./types.js";
 import { sendSlack } from "./channels/slack.js";

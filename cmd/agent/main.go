@@ -1,12 +1,12 @@
-// Command agent is the OptiFleet AI fleet telemetry & management agent.
+// Command agent คือเอเจนต์เก็บเทเลเมทรีและจัดการฟลีตของ OptiFleet AI
 //
-// Usage:
+// วิธีใช้:
 //
-//	agent -service install   # register as a named OS service (requires admin/root)
-//	agent -service start     # start the installed service
-//	agent -service stop      # stop it
-//	agent -service uninstall # remove it
-//	agent -run               # run in the foreground, e.g. for local testing
+//	agent -service install   # ลงทะเบียนเป็น OS service ที่มีชื่อ (ต้องใช้สิทธิ์ admin/root)
+//	agent -service start     # เริ่ม service ที่ติดตั้งไว้
+//	agent -service stop      # หยุด service
+//	agent -service uninstall # ถอนการติดตั้ง service
+//	agent -run               # รันแบบ foreground เช่น เพื่อทดสอบในเครื่อง
 package main
 
 import (
@@ -39,14 +39,14 @@ func main() {
 	configPath := flag.String("config", "configs/agent.yaml", "path to agent YAML config")
 	flag.Parse()
 
-	// A bare, interactive, flag-less invocation — a double-click, or running
-	// this exe from a shell with no arguments — self-installs into a
-	// per-user data folder, registers itself to auto-start at login, and
-	// starts running immediately, using the config/cert/secrets embedded in
-	// embed.go, so the Windows single-file distribution needs nothing
-	// alongside the .exe and never requests admin rights. See
-	// selfinstall_windows.go for why this check is safe against the Service
-	// Control Manager's own zero-argument invocation of an installed service.
+	// การเรียกแบบเปล่า ๆ ไม่มี flag แบบ interactive — ดับเบิลคลิก หรือรัน exe
+	// นี้จาก shell โดยไม่ใส่ argument เลย — จะ self-install ลงโฟลเดอร์ข้อมูล
+	// ของ user นั้น ๆ ลงทะเบียนให้ auto-start ตอน login และเริ่มทำงานทันที
+	// โดยใช้ config/cert/secrets ที่ฝังไว้ใน embed.go ทำให้ Windows
+	// single-file distribution ไม่ต้องมีไฟล์อื่นอยู่ข้าง .exe เลย และไม่ต้อง
+	// ขอสิทธิ์ admin ดู selfinstall_windows.go ว่าทำไม check นี้ถึงปลอดภัย
+	// จากการที่ Service Control Manager เรียกใช้ service ที่ติดตั้งแล้วแบบ
+	// zero-argument เหมือนกัน
 	if shouldSelfInstall(*svcFlag, *runForeground) {
 		selfInstall(false)
 		return
@@ -64,27 +64,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Visible, standard service registration — no hidden/renamed binary
-	// tricks, no startup-type manipulation beyond the OS default. It will
-	// show up in Task Manager / services.msc / launchctl / systemctl under
-	// cfg.Service.Name like any other managed software.
+	// ลงทะเบียน service แบบมาตรฐาน มองเห็นได้ปกติ — ไม่มีการซ่อน/เปลี่ยนชื่อ
+	// ไบนารี ไม่มีการปรับ startup-type ไปจากค่า default ของ OS จะขึ้นให้เห็น
+	// ใน Task Manager / services.msc / launchctl / systemctl ภายใต้ชื่อ
+	// cfg.Service.Name เหมือน software อื่น ๆ ทั่วไป
 	svcConfig := kservice.Config{
 		Name:        cfg.Service.Name,
 		DisplayName: cfg.Service.DisplayName,
 		Description: cfg.Service.Description,
 	}
 
-	// Only meaningful for "install": bakes whatever secrets the installer's
-	// own environment currently has into the service's own env block —
-	// kardianos writes this into a per-service registry Environment value on
-	// Windows, and into the launchd plist's EnvironmentVariables dict on
-	// macOS. Either way it's a static copy taken at install time, not a live
-	// read of the machine environment when the service manager itself
-	// starts — the latter is what bit us before: a secret set with setx /
-	// [Environment]::SetEnvironmentVariable(Machine) right before "install"
-	// is invisible to Windows' Service Control Manager until the next
-	// reboot, because SCM's own environment snapshot predates it. Baking
-	// the value in here sidesteps that regardless of platform.
+	// มีความหมายเฉพาะตอน "install": เอา secret ที่ environment ของตัว
+	// installer มีอยู่ตอนนั้นไป bake ลงใน env block ของ service เอง —
+	// kardianos จะเขียนค่านี้ลงใน registry Environment value ต่อ service บน
+	// Windows และลงใน EnvironmentVariables dict ของ launchd plist บน macOS
+	// ไม่ว่าจะแพลตฟอร์มไหนก็เป็นการ copy ค่าแบบ static ตอน install ไม่ใช่การ
+	// อ่านค่า environment ของเครื่องแบบสด ๆ ตอน service manager เริ่มทำงาน —
+	// จุดหลังนี้เคยทำให้พังมาแล้ว: secret ที่ set ด้วย setx หรือ
+	// [Environment]::SetEnvironmentVariable(Machine) ก่อนสั่ง "install" ไม่
+	// นานจะมองไม่เห็นจาก Service Control Manager ของ Windows จนกว่าจะ reboot
+	// รอบถัดไป เพราะ snapshot environment ของ SCM ถูกจับไปก่อนหน้านั้นแล้ว
+	// การ bake ค่าไว้ตรงนี้เลยเลี่ยงปัญหานี้ได้ไม่ว่าแพลตฟอร์มไหน
 	if *svcFlag == "install" {
 		svcConfig.EnvVars = map[string]string{}
 		if v := os.Getenv(cfg.Server.AuthTokenEnvVar); v != "" {
@@ -97,13 +97,13 @@ func main() {
 		}
 	}
 
-	// Resolved to an absolute path once here: configpush needs this exact
-	// path to know where to write agent.yaml.new and where the live
-	// agent.yaml it's replacing lives, and *configPath alone is only
-	// guaranteed correct relative to whatever the process's CWD was at
-	// startup (the installed service always passes an absolute path — see
-	// dist-agent-deploy-global/install.ps1's AppParameters — but this keeps
-	// -run/local-testing invocations correct too).
+	// resolve เป็น absolute path ครั้งเดียวตรงนี้: configpush ต้องใช้ path
+	// นี้เป๊ะ ๆ เพื่อรู้ว่าจะเขียน agent.yaml.new ที่ไหน และไฟล์ agent.yaml
+	// ตัวจริงที่กำลังจะถูกแทนที่อยู่ที่ไหน ส่วน *configPath เฉย ๆ นั้นถูกต้อง
+	// ก็ต่อเมื่อ relative กับ CWD ของ process ตอน startup เท่านั้น (service
+	// ที่ติดตั้งไว้จะส่ง absolute path มาให้เสมออยู่แล้ว — ดู
+	// dist-agent-deploy-global/install.ps1's AppParameters — แต่ทำแบบนี้ก็
+	// ช่วยให้การรันแบบ -run/ทดสอบในเครื่องถูกต้องด้วย)
 	absConfigPath, err := filepath.Abs(*configPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "config path error:", err)
@@ -143,8 +143,9 @@ func main() {
 	}
 }
 
-// runAgent wires the collector -> poller -> transport -> executor pipeline
-// and blocks until ctx is cancelled (service stop / foreground Ctrl-C).
+// runAgent ต่อสาย pipeline collector -> poller -> transport -> executor
+// เข้าด้วยกัน และ block อยู่จนกว่า ctx จะถูก cancel (service stop /
+// foreground Ctrl-C)
 func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, configPath string) {
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -153,9 +154,9 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 
 	configHash, err := hashFile(configPath)
 	if err != nil {
-		// Not fatal — the agent still runs fine without config-push
-		// convergence, it just never reports a hash the server can compare
-		// against, so it'll simply never receive a config_update.
+		// ไม่ fatal — agent ยังทำงานได้ปกติแม้ไม่มี config-push convergence
+		// แค่จะไม่มี hash ให้ server เทียบ ทำให้ไม่มีวันได้รับ config_update
+		// เท่านั้นเอง
 		loggers.Log.Warn().Err(err).Str("path", configPath).Msg("configpush: could not hash own config file, disabling config-push for this run")
 	}
 
@@ -180,11 +181,11 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 		ConfigHash:     configHash,
 	}, loggers.Log, exec.Handle)
 
-	// See internal/selfupdate's package doc for why this is a separate trust
-	// path from exec.Handle above (ordinary dispatched commands) — the
-	// server only ever sends a self_update on its own initiative (an
-	// outdated version reported in this agent's own heartbeat), never as
-	// something an operator or the AI console can trigger.
+	// ดู package doc ของ internal/selfupdate ว่าทำไมนี่ถึงเป็น trust path
+	// แยกจาก exec.Handle ด้านบน (คำสั่งปกติที่ถูก dispatch) — server จะส่ง
+	// self_update เองเท่านั้นตามที่เห็นสมควร (จากเวอร์ชันที่ล้าสมัยที่รายงาน
+	// มาใน heartbeat ของ agent เอง) ไม่ใช่สิ่งที่ operator หรือ AI console
+	// สั่งได้
 	client.SetSelfUpdateHandler(func(ctx context.Context, payload transport.SelfUpdatePayload) {
 		err := selfupdate.Apply(ctx, selfupdate.Config{
 			HMACSecret:     cfg.Server.HMACSecret,
@@ -198,9 +199,9 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 		}
 	})
 
-	// Same isolation reasoning as SetSelfUpdateHandler above — see
-	// internal/configpush's package doc and ConfigUpdatePayload's comment in
-	// internal/transport/protocol.go.
+	// เหตุผลเรื่อง isolation เดียวกันกับ SetSelfUpdateHandler ด้านบน — ดู
+	// package doc ของ internal/configpush และ comment ของ
+	// ConfigUpdatePayload ใน internal/transport/protocol.go
 	client.SetConfigUpdateHandler(func(ctx context.Context, payload transport.ConfigUpdatePayload) {
 		err := configpush.Apply(configpush.Config{
 			HMACSecret:  cfg.Server.HMACSecret,
@@ -213,9 +214,9 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 		}
 	})
 
-	// Wired up here rather than at executor.New(...) above: the client
-	// itself needs exec.Handle as a constructor argument, so it can't exist
-	// yet at that point — see Executor.sendOutput's own doc comment.
+	// ต้องมาต่อสายตรงนี้แทนที่จะทำใน executor.New(...) ด้านบน: client เองก็
+	// ต้องใช้ exec.Handle เป็น constructor argument ตอนนั้น client ยังไม่มี
+	// อยู่ — ดู doc comment ของ Executor.sendOutput
 	exec.SetOutputSender(func(commandID, line string, done bool, errMsg string) {
 		client.SendCommandOutput(transport.CommandOutputPayload{
 			CommandID: commandID,
@@ -229,12 +230,12 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 	go heartbeatLoop(ctx, client)
 
 	// --- Self-Healing Engine ---
-	// All three loops act only on the locally-configured allowlist/watch
-	// list in cfg.SelfHeal — none of it is expandable by a remote command.
-	// They report what they did to the server as "alert" messages via
-	// client.SendAlert, purely for visibility; nothing here waits on a
-	// server response before acting, since the whole point is to recover
-	// without round-tripping to a possibly-unreachable server.
+	// ทั้งสาม loop ทำงานตาม allowlist/watch list ที่ config ไว้ในเครื่อง
+	// (cfg.SelfHeal) เท่านั้น — ไม่มีส่วนไหนขยายได้ด้วยคำสั่งจากระยะไกล มันจะ
+	// รายงานสิ่งที่ทำไปให้ server ในรูป "alert" message ผ่าน client.SendAlert
+	// เพื่อความ visibility ล้วน ๆ ไม่มีจุดไหนรอ response จาก server ก่อนลงมือ
+	// ทำ เพราะจุดประสงค์หลักคือ recover ได้เองโดยไม่ต้อง round-trip ไปหา
+	// server ที่อาจจะติดต่อไม่ได้อยู่แล้ว
 	watchdog := selfheal.NewServiceWatchdog(selfheal.ServiceWatchdogConfig{
 		Services:           cfg.SelfHeal.Services.Watch,
 		CheckInterval:      cfg.SelfHeal.Services.CheckInterval,
@@ -292,32 +293,31 @@ func runAgent(ctx context.Context, cfg *config.Config, loggers *logger.Loggers, 
 		memMonitor.Observe(snap)
 	})
 
-	// Wired here rather than at executor.New(...) above: the executor is
-	// constructed before the poller exists (the poller's own constructor
-	// needs the client, which itself needs exec.Handle) — same ordering
-	// constraint as exec.SetOutputSender above.
+	// ต่อสายตรงนี้แทนที่จะทำใน executor.New(...) ด้านบน: executor ถูกสร้าง
+	// ก่อนที่ poller จะมีอยู่ (constructor ของ poller เองก็ต้องใช้ client ซึ่ง
+	// ต้องใช้ exec.Handle) — ข้อจำกัดเรื่องลำดับการสร้างเดียวกับ
+	// exec.SetOutputSender ด้านบน
 	exec.SetStateChangeNotifier(poller.TriggerNow)
 
-	poller.Run(ctx) // blocks until ctx is cancelled
+	poller.Run(ctx) // block ไว้จนกว่า ctx จะถูก cancel
 }
 
-// heartbeatLoop sends a lightweight liveness signal on a fixed cadence,
-// independent of the telemetry poller's normal/alert mode switching.
+// heartbeatLoop ส่งสัญญาณ liveness แบบเบา ๆ ตามรอบเวลาที่ตายตัว โดยไม่
+// เกี่ยวกับการสลับโหมด normal/alert ของ telemetry poller
 //
-// The first heartbeat fires immediately rather than waiting a full tick.
-// This matters beyond liveness: the server identifies a freshly-connected
-// agent (learns its agent_id) from the first heartbeat OR telemetry message
-// it receives, but a TelemetryPayload carries no agent_id of its own — only
-// HeartbeatPayload does. The poller sends its first snapshot immediately on
-// connect (internal/telemetry.Poller uses time.NewTimer(0)), so without an
-// equally-immediate first heartbeat, that first telemetry message would
-// almost always win the race and arrive before any heartbeat has
-// identified the connection — the server has nothing to key it on and
-// drops it, leaving the agent invisible until a minute-later heartbeat
-// finally arrives.
-// hashFile returns a hex SHA256 of path's raw bytes — used to detect config
-// drift from the server's own desired-config file, see ConfigHash's doc
-// comment in internal/transport/protocol.go.
+// heartbeat แรกจะยิงทันทีแทนที่จะรอ tick เต็มรอบ เรื่องนี้สำคัญกว่าแค่เรื่อง
+// liveness: server จะรู้จัก agent ที่เพิ่ง connect เข้ามา (เรียนรู้
+// agent_id ของมัน) จาก heartbeat แรก หรือ telemetry message แรกที่ได้รับ
+// แต่ TelemetryPayload ไม่มี agent_id ของตัวเองเลย มีแต่ HeartbeatPayload
+// เท่านั้นที่มี ส่วน poller จะส่ง snapshot แรกทันทีตอน connect
+// (internal/telemetry.Poller ใช้ time.NewTimer(0)) ดังนั้นถ้าไม่มี
+// heartbeat แรกที่ยิงทันทีเหมือนกัน telemetry message แรกนั้นแทบจะชนะการ
+// แข่งขันเสมอและมาถึงก่อนที่ heartbeat ไหนจะระบุตัวตนของ connection ได้ —
+// server จะไม่มีอะไรให้ key แล้วก็ drop มันทิ้ง ทำให้ agent มองไม่เห็นจน
+// กว่า heartbeat รอบถัดไปอีกนาทีจะมาถึง
+// hashFile คืนค่า hex SHA256 ของไบต์ดิบในไฟล์ path — ใช้ตรวจ config drift
+// จากไฟล์ desired-config ของ server เอง ดู doc comment ของ ConfigHash ใน
+// internal/transport/protocol.go
 func hashFile(path string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

@@ -4,6 +4,6 @@ package executor
 
 import "os/exec"
 
-// hideWindow is a no-op on macOS/Linux: a service/daemon process has no
-// console to attach to in the first place, so there is nothing to suppress.
+// hideWindow ไม่ทำอะไรเลยบน macOS/Linux: process แบบ service/daemon ไม่มี
+// console ให้แนบตั้งแต่แรกอยู่แล้ว จึงไม่มีอะไรต้องซ่อน
 func hideWindow(cmd *exec.Cmd) {}

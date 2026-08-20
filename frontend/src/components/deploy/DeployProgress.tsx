@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { StreamedCommandOutput } from "@/hooks/useDashboardSocket";
 
-// Parses the STATUS:/PROGRESS: lines internal/executor's runScript streams
-// live out of a command's stdout/stderr into a stage + percent — everything
-// else is just shown as raw log output underneath, for anyone who wants the
-// actual script transcript instead of the summary. Shared by every page
-// that dispatches a run_script and wants live feedback (Software Deploy,
-// Uninstall Software) rather than each re-implementing the same parsing.
+// แปลงบรรทัด STATUS:/PROGRESS: ที่ runScript ของ internal/executor สตรีม
+// ออกมาจาก stdout/stderr ของคำสั่งแบบ real-time ให้กลายเป็น stage + percent
+// ส่วนบรรทัดอื่นๆ ที่เหลือแสดงเป็น raw log ด้านล่างเฉยๆ สำหรับใครที่อยาก
+// ดู transcript จริงของสคริปต์แทนสรุปย่อ ใช้ร่วมกันทุกหน้าที่ยิง
+// run_script แล้วอยากได้ feedback แบบ live (Software Deploy, Uninstall
+// Software) จะได้ไม่ต้องเขียน logic parse ซ้ำกันในแต่ละที่
 export function parseProgress(output: StreamedCommandOutput | undefined): { stage: string | null; percent: number | null } {
   let stage: string | null = null;
   let percent: number | null = null;
@@ -28,17 +28,16 @@ const STAGE_LABELS: Record<string, string> = {
   done: "Done",
 };
 
-// Neither "installing" nor "uninstalling" has anything real to measure —
-// no silent installer (Ninite's or a vendor's own) reports its own percent
-// complete, unlike the download step's byte count. A bare indeterminate
-// pulse with no number at all read as "is this even doing anything?", so
-// this fills the gap with an honest-looking estimate instead: fast at
-// first, slowing as it approaches a 92% ceiling it can never claim to
-// reach on its own (only the real "done" event can ever call this 100%),
-// asymptotic so it never looks stalled the way a linear ramp would once it
-// runs longer than expected. `active` gates it so the timer/state resets
-// cleanly between one dispatch and the next rather than carrying over a
-// stale clock.
+// ทั้ง "installing" และ "uninstalling" ไม่มีอะไรให้วัดความคืบหน้าจริง —
+// ไม่มี silent installer ตัวไหน (ของ Ninite หรือของ vendor เอง) รายงาน
+// percent ของตัวเองออกมา ต่างจากขั้นตอนดาวน์โหลดที่มี byte count ให้ใช้
+// ถ้าปล่อยเป็น indeterminate pulse เฉยๆ ไม่มีตัวเลขเลย คนดูจะรู้สึกว่า
+// "นี่มันทำงานอยู่จริงไหม" จึงจำลองค่า percent ที่ดูสมเหตุสมผลขึ้นมาแทน:
+// วิ่งเร็วตอนแรก แล้วค่อยๆ ช้าลงเมื่อใกล้เพดาน 92% (ซึ่งมันจะไม่มีวันอ้าง
+// ว่าถึง 100% เองได้ ต้องรอ event "done" จริงเท่านั้น) เป็นเส้นโค้งแบบ
+// asymptotic เพื่อไม่ให้ดูเหมือนค้างแม้จะใช้เวลานานกว่าที่คาด ตัวแปร
+// `active` ใช้คุมให้ timer/state รีเซ็ตสะอาดทุกครั้งที่เริ่มงานใหม่ ไม่ให้
+// ค่าจากรอบก่อนหน้าค้างอยู่
 export function useSimulatedProgress(active: boolean): number {
   const [percent, setPercent] = useState(0);
   const startRef = useRef<number | null>(null);
@@ -60,12 +59,12 @@ export function useSimulatedProgress(active: boolean): number {
   return percent;
 }
 
-// The one source of truth for "what percent is currently showing" — real
-// download bytes during that stage, the simulated estimate otherwise, null
-// once there's a final result or nothing dispatched yet. Callers that want
-// to echo the same number outside DeployProgress itself (a Deploy/Uninstall
-// button's own label, so it doesn't show a different figure than the bar
-// right below it) use this instead of re-deriving it their own way.
+// จุดเดียวที่เป็น source of truth ของ "ตอนนี้ควรโชว์กี่เปอร์เซ็นต์" — ใช้
+// byte count ของการดาวน์โหลดจริงในขั้นตอนนั้น หรือใช้ค่าจำลองในขั้นตอนอื่น
+// และเป็น null เมื่อมีผลลัพธ์สุดท้ายแล้วหรือยังไม่ได้ยิงคำสั่งเลย ฝั่งที่
+// อยากโชว์ตัวเลขเดียวกันนี้นอก DeployProgress เอง (เช่น label บนปุ่ม
+// Deploy/Uninstall ที่ไม่อยากโชว์ตัวเลขต่างจาก progress bar ด้านล่าง)
+// ให้เรียกใช้ตัวนี้แทนที่จะคำนวณเองซ้ำ
 export function useDeployPercent(commandId: string | null, output: StreamedCommandOutput | undefined): number | null {
   const { stage, percent: realPercent } = parseProgress(output);
   const isDownloading = stage === "downloading";

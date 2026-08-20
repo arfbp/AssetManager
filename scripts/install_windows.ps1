@@ -1,11 +1,10 @@
-# Builds and installs the OptiFleet AI Agent as a standard Windows Service.
-# Must be run from an elevated (Administrator) PowerShell prompt.
+# Build และติดตั้ง OptiFleet AI Agent เป็น Windows Service มาตรฐาน
+# ต้องรันจาก PowerShell prompt แบบ elevated (Administrator)
 #
-# The service is installed under its normal display name and IS visible in
-# services.msc and Task Manager > Services — this script does not attempt to
-# hide it. If you need to distribute this at scale, use your existing
-# software deployment tooling (Intune, SCCM, GPO) rather than running this
-# interactively on each machine.
+# service จะถูกติดตั้งภายใต้ display name ปกติและมองเห็นได้ใน services.msc
+# และ Task Manager > Services — สคริปต์นี้ไม่ได้พยายามซ่อนมัน ถ้าต้องการ
+# กระจายในสเกลใหญ่ ให้ใช้เครื่องมือ deploy ซอฟต์แวร์ที่มีอยู่แล้ว (Intune,
+# SCCM, GPO) แทนที่จะรันสคริปต์นี้แบบ interactive ทีละเครื่อง
 
 $ErrorActionPreference = "Stop"
 

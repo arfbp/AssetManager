@@ -9,21 +9,25 @@ import (
 	"time"
 )
 
-// collectDevices enumerates currently-connected USB devices, printers, and
-// displays via the same system tools Finder/System Information use
-// (system_profiler, lpstat) — best-effort, same as the Windows
-// implementation: one source failing never blocks the others.
+// collectDevices แจกแจง USB device, printer, และจอที่ต่ออยู่ตอนนี้ ผ่าน
+// system tool ตัวเดียวกับที่ Finder/System Information ใช้ (system_profiler,
+// lpstat) — best-effort เหมือน implementation ของ Windows: แหล่งข้อมูลหนึ่ง
+// ล้มเหลวจะไม่บล็อกตัวอื่น
 func collectDevices() []DeviceInfo {
-	var devices []DeviceInfo
+	// เริ่มจากค่าที่ไม่ใช่ nil: append(nil, emptySlice...) ยังคืน nil อยู่
+	// ถ้า sub-collector ทุกตัวไม่มีอะไรให้เลย ดังนั้นต้องเริ่มจาก
+	// []DeviceInfo{} เท่านั้นถึงจะรับประกันผลลัพธ์ที่ไม่ใช่ nil — ดู
+	// comment เดียวกันใน collectDevices ของ devices_windows.go
+	devices := []DeviceInfo{}
 	devices = append(devices, collectUSBDevicesDarwin()...)
 	devices = append(devices, collectPrintersDarwin()...)
 	devices = append(devices, collectMonitorsDarwin()...)
 	return devices
 }
 
-// collectHardwareInfo reads the Mac's own serial number and model identifier
-// — asset-tracking identity, not a peripheral — via SPHardwareDataType, the
-// same source "About This Mac" uses.
+// collectHardwareInfo อ่าน serial number และ model identifier ของ Mac เอง
+// — เป็นข้อมูลระบุตัวตนสำหรับ asset-tracking ไม่ใช่ peripheral — ผ่าน
+// SPHardwareDataType แหล่งข้อมูลเดียวกับที่ "About This Mac" ใช้
 func collectHardwareInfo() (serial, model, manufacturer string) {
 	parsed, ok := runSystemProfilerJSON("SPHardwareDataType")
 	if !ok {
@@ -60,18 +64,18 @@ func runSystemProfilerJSON(dataType string) (map[string]interface{}, bool) {
 	return parsed, true
 }
 
-// collectPhysicalDisks reads SPStorageDataType, which nests each mounted
-// volume's backing physical drive (device name + medium_type "SSD" or
-// "Rotational") under a "physical_drive" key — deduped by device name since
-// several volumes/partitions can share one physical disk. Like
-// collectMonitorsDarwin, this couldn't be verified against real Mac
-// hardware; system_profiler's JSON key names have shifted across macOS
-// versions before, so treat this as best-effort same as everywhere else in
-// this file — a parse miss just yields an empty list, not a crash.
+// collectPhysicalDisks อ่าน SPStorageDataType ซึ่งซ้อน physical drive ที่
+// รองรับแต่ละ mounted volume (device name + medium_type "SSD" หรือ
+// "Rotational") ไว้ใต้ key "physical_drive" — dedupe ด้วย device name เพราะ
+// หลาย volume/partition ใช้ physical disk เดียวกันได้ เหมือนกับ
+// collectMonitorsDarwin ส่วนนี้ยังไม่เคยยืนยันกับเครื่อง Mac จริง;
+// ชื่อ key ของ JSON ใน system_profiler เคยเปลี่ยนไปมาข้าม macOS version
+// มาแล้ว ดังนั้นถือเป็น best-effort เหมือนที่อื่นในไฟล์นี้ — parse พลาดก็
+// แค่ได้ list ว่างเปล่า ไม่ crash
 func collectPhysicalDisks() []PhysicalDiskInfo {
-	// Empty-but-non-nil on every failure path — a nil Go slice marshals to
-	// JSON `null`, and the frontend calls .length on this field
-	// unconditionally, same as every other array field in a snapshot.
+	// เป็น slice ว่างแต่ไม่ใช่ nil ทุก failure path — slice ที่เป็น nil ใน
+	// Go จะ marshal เป็น JSON `null` และฝั่ง frontend เรียก .length บน
+	// field นี้โดยไม่เช็คก่อน เหมือน array field อื่น ๆ ทั้งหมดใน snapshot
 	disks := []PhysicalDiskInfo{}
 	parsed, ok := runSystemProfilerJSON("SPStorageDataType")
 	if !ok {
@@ -116,22 +120,43 @@ func collectPhysicalDisks() []PhysicalDiskInfo {
 	return disks
 }
 
-// collectUSBDevicesDarwin walks SPUSBDataType's tree (each hub/controller
-// nests its attached devices under "_items", recursively) and records every
-// named node it finds. This necessarily also picks up hubs/controllers
-// themselves alongside actual peripherals — system_profiler doesn't cleanly
-// separate "bus infrastructure" from "thing plugged into it" the way a
-// single flat device list would.
+// collectLocalUsers ยังไม่ได้ implement บน macOS — Windows
+// (devices_windows.go) อ่าน local account ผ่าน WMI's
+// Win32_UserAccount/Win32_GroupUser; ฝั่ง macOS ที่เทียบเท่ากันต้อง shell
+// out ไปเรียก `dscl . -list /Users` บวกกับเช็ค membership ด้วย
+// `dseditgroup` ซึ่งยังไม่ได้เขียน เป็น no-op ที่บันทึกไว้แล้ว ไม่ใช่
+// build fail เหมือน pattern ของ collectDevices บนแพลตฟอร์มที่ยังไม่รองรับ
+func collectLocalUsers() []LocalUserInfo {
+	return []LocalUserInfo{}
+}
+
+// collectCurrentUser ยังไม่ได้ implement บน macOS — Windows
+// (devices_windows.go) อ่านเจ้าของ console session ผ่าน
+// Win32_ComputerSystem.UserName; ฝั่ง macOS ที่เทียบเท่ากันต้อง shell out
+// ไปเรียก `stat -f%Su /dev/console` ซึ่งยังไม่ได้เขียน เหตุผลเรื่อง no-op
+// เดียวกับ collectLocalUsers ด้านบน
+func collectCurrentUser() string {
+	return ""
+}
+
+// collectUSBDevicesDarwin เดิน tree ของ SPUSBDataType (แต่ละ hub/controller
+// ซ้อน device ที่ต่ออยู่ไว้ใต้ "_items" แบบ recursive) แล้วบันทึกทุก node
+// ที่มีชื่อที่เจอ วิธีนี้จะได้ hub/controller เองปนมากับ peripheral จริงด้วย
+// อย่างเลี่ยงไม่ได้ — system_profiler ไม่ได้แยก "โครงสร้าง bus" ออกจาก
+// "สิ่งที่เสียบเข้าไป" อย่างชัดเจนแบบที่ device list แบบ flat เดียวจะทำได้
 func collectUSBDevicesDarwin() []DeviceInfo {
+	// เป็น slice ว่างแต่ไม่ใช่ nil ทุก path — slice ที่เป็น nil ใน Go จะ
+	// marshal เป็น JSON `null` และฝั่ง frontend เรียก .length บน field นี้
+	// โดยไม่เช็คก่อน
 	parsed, ok := runSystemProfilerJSON("SPUSBDataType")
 	if !ok {
-		return nil
+		return []DeviceInfo{}
 	}
 	top, ok := parsed["SPUSBDataType"].([]interface{})
 	if !ok {
-		return nil
+		return []DeviceInfo{}
 	}
-	var devices []DeviceInfo
+	devices := []DeviceInfo{}
 	for _, node := range top {
 		walkUSBTreeDarwin(node, &devices)
 	}
@@ -154,18 +179,18 @@ func walkUSBTreeDarwin(node interface{}, out *[]DeviceInfo) {
 	}
 }
 
-// collectPrintersDarwin shells out to lpstat rather than
-// SPPrintersDataType — simpler output to parse, and reports what CUPS
-// actually has configured rather than requiring system_profiler's own
-// (slower) printer probe.
+// collectPrintersDarwin shell out ไปเรียก lpstat แทนที่จะใช้
+// SPPrintersDataType — output parse ง่ายกว่า และรายงานสิ่งที่ CUPS
+// config ไว้จริง ๆ แทนที่จะต้องพึ่ง printer probe ของ system_profiler เอง
+// ที่ช้ากว่า
 func collectPrintersDarwin() []DeviceInfo {
 	cmd := exec.Command("lpstat", "-p")
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return nil
+		return []DeviceInfo{}
 	}
-	var devices []DeviceInfo
+	devices := []DeviceInfo{}
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == "printer" {
@@ -175,21 +200,20 @@ func collectPrintersDarwin() []DeviceInfo {
 	return devices
 }
 
-// collectMonitorsDarwin reads SPDisplaysDataType. The nested key
-// system_profiler uses for individual displays under each GPU entry has
-// shifted across macOS versions in the past (spdisplays_ndrvs is the
-// current one) — this is the one part of device collection that couldn't
-// be verified against real hardware; see the deploy README.
+// collectMonitorsDarwin อ่าน SPDisplaysDataType key ที่ system_profiler ใช้
+// สำหรับจอแต่ละตัวภายใต้แต่ละ GPU entry เคยเปลี่ยนไปมาข้าม macOS version
+// มาแล้ว (ตอนนี้ใช้ spdisplays_ndrvs) — นี่คือส่วนเดียวของการเก็บข้อมูล
+// device ที่ยังไม่เคยยืนยันกับเครื่องจริง; ดู deploy README
 func collectMonitorsDarwin() []DeviceInfo {
 	parsed, ok := runSystemProfilerJSON("SPDisplaysDataType")
 	if !ok {
-		return nil
+		return []DeviceInfo{}
 	}
 	gpus, ok := parsed["SPDisplaysDataType"].([]interface{})
 	if !ok {
-		return nil
+		return []DeviceInfo{}
 	}
-	var devices []DeviceInfo
+	devices := []DeviceInfo{}
 	for _, gpu := range gpus {
 		gm, ok := gpu.(map[string]interface{})
 		if !ok {

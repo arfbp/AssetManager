@@ -1,8 +1,8 @@
-// Bounded in-memory log of dispatched commands and their outcomes, for the
-// dashboard's "Command History" panel. A ring buffer (fixed max size) is
-// enough for an operational view of recent activity; wire this into your
-// real audit/log storage (see server/README.md) for anything that needs to
-// survive a restart or be queried beyond the recent window.
+// log คำสั่งที่ dispatch แล้วพร้อมผลลัพธ์ เก็บในหน่วยความจำแบบมีขอบเขต ใช้
+// แสดงในแผง "Command History" ของ dashboard ring buffer (ขนาดสูงสุดตายตัว)
+// เพียงพอสำหรับมุมมองปฏิบัติการของกิจกรรมล่าสุด ถ้าต้องการอะไรที่รอดจากการ
+// restart หรือค้นย้อนหลังเกินหน้าต่างล่าสุดได้ ให้ต่อเข้ากับระบบ audit/log
+// storage จริง (ดู server/README.md)
 import { EventEmitter } from "node:events";
 import type { CommandAction } from "../protocol.js";
 
@@ -15,7 +15,7 @@ export interface HistoryEntry {
   action: CommandAction;
   params: Record<string, string>;
   requestedBy: string;
-  sourceText: string | null; // the original NL request, if this came from the chat console
+  sourceText: string | null; // คำขอภาษาธรรมชาติต้นฉบับ ถ้ามาจาก chat console
   status: HistoryEntryStatus;
   message: string | null;
   dispatchedAt: number;
@@ -24,7 +24,7 @@ export interface HistoryEntry {
 
 const MAX_ENTRIES = 500;
 
-/** Emits "entry" with a {@link HistoryEntry} on every insert or update. */
+/** ยิง event "entry" พร้อม {@link HistoryEntry} ทุกครั้งที่ insert หรืออัปเดต */
 export class CommandHistoryStore extends EventEmitter {
   private entries: HistoryEntry[] = [];
   private readonly byId = new Map<string, HistoryEntry>();
@@ -44,7 +44,7 @@ export class CommandHistoryStore extends EventEmitter {
 
   recordResult(commandId: string, success: boolean, message: string): void {
     const entry = this.byId.get(commandId);
-    if (!entry) return; // result for a command dispatched before this process started, or already trimmed
+    if (!entry) return; // เป็นผลลัพธ์ของคำสั่งที่ dispatch ก่อน process นี้จะเริ่ม หรือถูกตัดทิ้งไปแล้ว
     entry.status = success ? "succeeded" : "failed";
     entry.message = message;
     entry.resolvedAt = Date.now();
@@ -55,16 +55,16 @@ export class CommandHistoryStore extends EventEmitter {
     return this.entries.slice(-limit).reverse();
   }
 
-  // Warm-starts this in-memory store from durable storage (Postgres's
-  // command_history table — see db/persistence.ts's loadRecentHistory) right
-  // after construction, before any dashboard client connects. Without this,
-  // every server restart silently blanked the live "who did what" view back
-  // to empty — command_history itself was never affected (upsertHistoryEntry
-  // already persisted everything correctly), only this operational,
-  // memory-only copy the dashboard/AI console/Commands tab actually read
-  // from. `entries` must arrive oldest-first, matching recordDispatch's own
-  // push-to-end ordering, or recent()'s slice+reverse would return them
-  // newest-first internally and backwards to callers.
+  // โหลด store ในหน่วยความจำนี้ล่วงหน้าจาก storage แบบถาวร (ตาราง
+  // command_history ของ Postgres — ดู loadRecentHistory ใน
+  // db/persistence.ts) ทันทีหลังสร้าง object ก่อนที่ dashboard client ตัวไหน
+  // จะเชื่อมต่อเข้ามา ถ้าไม่ทำแบบนี้ ทุกครั้งที่ server restart มุมมอง "ใครทำ
+  // อะไร" แบบสดจะว่างเปล่าไปแบบเงียบ ๆ — ตัว command_history เองไม่เคยได้รับ
+  // ผลกระทบเลย (upsertHistoryEntry บันทึกทุกอย่างถูกต้องอยู่แล้ว) มีแค่สำเนา
+  // เชิงปฏิบัติการในหน่วยความจำอันนี้เท่านั้นที่ dashboard/AI console/แท็บ
+  // Commands อ่านมาใช้จริง `entries` ต้องมาแบบเก่าสุดก่อน ให้ตรงกับลำดับที่
+  // recordDispatch push เข้าท้าย list เอง ไม่งั้น slice+reverse ของ recent()
+  // จะคืนค่ากลับด้านผิดลำดับให้ผู้เรียก
   hydrate(entries: HistoryEntry[]): void {
     this.entries = entries.slice(-MAX_ENTRIES);
     this.byId.clear();

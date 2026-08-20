@@ -10,26 +10,26 @@ import (
 	"strings"
 )
 
-// runScriptEnvLine is the one literal env-var line this package will ever
-// add to a service's environment — see ConfigUpdatePayload's doc comment in
-// internal/transport/protocol.go for why this is a fixed literal rather than
-// a server-supplied value spliced into the generated batch script.
+// runScriptEnvLine คือบรรทัด env-var ตัวเดียวที่ package นี้จะเพิ่มเข้าไปใน
+// environment ของ service ดู doc comment ของ ConfigUpdatePayload ใน
+// internal/transport/protocol.go ว่าทำไมนี่ถึงเป็นค่าตายตัวแทนที่จะเป็นค่าที่
+// server ส่งมาแล้วเอาไปแปะใน batch script ที่ generate ขึ้น
 const runScriptEnvLine = "OPTIFLEET_ENABLE_RUN_SCRIPT=true"
 
-// applyPlatform swaps in the new agent.yaml and, if enableRunScript is set,
-// adds runScriptEnvLine to the service's NSSM AppEnvironmentExtra — via the
-// same Task-Scheduler-launched batch-script pattern as
-// internal/selfupdate_windows.go's applyPlatform, and for the exact same
-// reasons (a running service holds files open / can tree-kill a direct
-// child the instant it stops; see that file's doc comments for the two real
-// bugs that pattern was built to route around).
+// applyPlatform สลับ agent.yaml ตัวใหม่เข้าไป และถ้า enableRunScript ถูก set
+// ไว้ จะเพิ่ม runScriptEnvLine เข้าไปใน AppEnvironmentExtra ของ NSSM ของ
+// service — ผ่าน pattern เดียวกับ batch-script ที่ยิงผ่าน Task Scheduler
+// เหมือน applyPlatform ของ internal/selfupdate_windows.go และด้วยเหตุผล
+// เดียวกันเป๊ะ ๆ (service ที่กำลังรันอยู่จะถือไฟล์ค้างไว้ / tree-kill
+// child process ตรงของมันทันทีที่ตัว service หยุด; ดู doc comment ของไฟล์
+// นั้นสำหรับบั๊กจริงสองตัวที่ pattern นี้ถูกสร้างมาเพื่อเลี่ยง)
 //
-// AppEnvironmentExtra is a multi-value (REG_MULTI_SZ) NSSM parameter, and
-// `nssm set` REPLACES it wholesale rather than appending — so the existing
-// values (this agent's own OPTIFLEET_AUTH_TOKEN / OPTIFLEET_HMAC_SECRET,
-// set at install time) are read back here and merged in Go, before they're
-// baked into the generated script, rather than risking a batch script
-// clobbering them.
+// AppEnvironmentExtra เป็น NSSM parameter แบบ multi-value (REG_MULTI_SZ)
+// และ `nssm set` จะ REPLACE ค่าทั้งหมดแทนที่จะ append — ดังนั้นค่าเดิมที่มี
+// อยู่ (OPTIFLEET_AUTH_TOKEN / OPTIFLEET_HMAC_SECRET ของ agent เองที่ set
+// ไว้ตอน install) จะถูกอ่านกลับมาตรงนี้แล้ว merge ใน Go ก่อนที่จะเอาไปแปะ
+// ในสคริปต์ที่ generate ขึ้น แทนที่จะเสี่ยงให้ batch script ไป clobber
+// ทับค่าเดิม
 func applyPlatform(configPath, newConfigPath, serviceName string, enableRunScript bool) error {
 	installDir := filepath.Dir(configPath)
 	nssmPath := filepath.Join(installDir, "nssm.exe")
@@ -44,12 +44,12 @@ func applyPlatform(configPath, newConfigPath, serviceName string, enableRunScrip
 	if enableRunScript && !containsLine(envLines, runScriptEnvLine) {
 		envLines = append(envLines, runScriptEnvLine)
 	}
-	// nssm set <service> AppEnvironmentExtra takes one KEY=VALUE per
-	// argument — each becomes one line of the stored multi-value. Every
-	// value here originates from either this machine's own install-time
-	// secrets or the fixed runScriptEnvLine literal above, never directly
-	// from server-supplied text, so passing them as separate batch-script
-	// arguments carries no injection risk.
+	// nssm set <service> AppEnvironmentExtra รับ KEY=VALUE หนึ่งค่าต่อหนึ่ง
+	// argument — แต่ละอันจะกลายเป็นหนึ่งบรรทัดใน multi-value ที่เก็บไว้ ทุก
+	// ค่าตรงนี้มาจาก secret ตอน install ของเครื่องนี้เอง หรือค่าตายตัว
+	// runScriptEnvLine ด้านบนเท่านั้น ไม่เคยมาจาก text ที่ server ส่งมาตรง ๆ
+	// เลย การส่งเป็น argument แยกกันใน batch script เลยไม่มีความเสี่ยงเรื่อง
+	// injection
 	envArgs := strings.Join(envLines, " ")
 
 	oldPath := configPath + ".old"
@@ -80,15 +80,15 @@ del "%%~f0"
 		return fmt.Errorf("configpush: write updater script: %w", err)
 	}
 
-	// Same schtasks-launch reasoning as internal/selfupdate_windows.go: a
-	// direct child process of this agent gets torn down the instant "nssm
-	// stop" actually stops the service (verified there on real hardware),
-	// regardless of CREATE_BREAKAWAY_FROM_JOB — only a process whose parent
-	// is the Task Scheduler service itself is structurally immune. Same
-	// /ru SYSTEM requirement too: this agent runs as LocalSystem, which
-	// schtasks cannot resolve an implicit account context for.
+	// เหตุผลเรื่องยิงผ่าน schtasks เดียวกับ internal/selfupdate_windows.go:
+	// child process ตรงของ agent นี้จะถูกทำลายทิ้งทันทีที่ "nssm stop" หยุด
+	// service จริง ๆ (ยืนยันแล้วบนเครื่องจริง) ไม่ว่าจะมี
+	// CREATE_BREAKAWAY_FROM_JOB หรือไม่ก็ตาม — มีแต่ process ที่มี parent
+	// เป็นตัว Task Scheduler service เองเท่านั้นที่รอดจากเรื่องนี้โดยโครงสร้าง
+	// ต้องการ /ru SYSTEM เหมือนกันด้วย: agent นี้รันเป็น LocalSystem ซึ่ง
+	// schtasks resolve account context แบบ implicit ให้ไม่ได้
 	taskName := "OptiFleetAgentConfigPush"
-	_ = exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run() // best-effort: clear a stale task from a previous attempt, if any
+	_ = exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run() // best-effort: เคลียร์ task ค้างจากความพยายามครั้งก่อน ถ้ามี
 	createArgs := []string{"/create", "/tn", taskName, "/tr", scriptPath, "/sc", "once", "/st", "23:59", "/rl", "highest", "/ru", "SYSTEM", "/f"}
 	if out, err := exec.Command("schtasks", createArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("configpush: schtasks create failed: %w (%s)", err, string(out))
@@ -99,9 +99,9 @@ del "%%~f0"
 	return nil
 }
 
-// currentEnvExtra reads back this service's existing AppEnvironmentExtra
-// (nssm get prints one value per line, or nothing if unset) so applyPlatform
-// can merge into it rather than overwrite it.
+// currentEnvExtra อ่าน AppEnvironmentExtra เดิมของ service นี้กลับมา (nssm
+// get พิมพ์ค่าออกมาบรรทัดละหนึ่งค่า หรือไม่พิมพ์อะไรเลยถ้ายังไม่ได้ set)
+// เพื่อให้ applyPlatform merge เข้าไปได้แทนที่จะเขียนทับ
 func currentEnvExtra(nssmPath, serviceName string) ([]string, error) {
 	out, err := exec.Command(nssmPath, "get", serviceName, "AppEnvironmentExtra").CombinedOutput()
 	if err != nil {

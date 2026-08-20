@@ -22,18 +22,18 @@ function Devices({ username }: { username: string }) {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [assetPrefill, setAssetPrefill] = useState<AssetInput | null>(null);
-  // Just enough asset data for the "Connected devices" list to hide
-  // "+ Add as asset" for a device that's already registered — the full
-  // asset table itself lives on /assets, not here.
+  // เก็บข้อมูล asset แค่พอให้ list "Connected devices" รู้ว่าต้องซ่อนปุ่ม
+  // "+ Add as asset" สำหรับ device ที่ลงทะเบียนเป็น asset ไปแล้ว —
+  // ตาราง asset เต็มรูปแบบอยู่ที่หน้า /assets ไม่ใช่ที่นี่
   const [registeredSerials, setRegisteredSerials] = useState<Set<string>>(new Set());
 
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [countryFilter, setCountryFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  // agentId -> country, from IP geolocation (same source as Live Tracking) —
-  // fetched once here rather than duplicating a geolocation lookup, since
-  // AgentSummary itself carries no location data.
+  // agentId -> country จาก IP geolocation (แหล่งข้อมูลเดียวกับ Live Tracking) —
+  // ดึงมาแค่ครั้งเดียวตรงนี้แทนที่จะทำ geolocation lookup ซ้ำ เพราะ
+  // AgentSummary เองไม่มีข้อมูล location ติดมาด้วย
   const [countryByAgent, setCountryByAgent] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -45,24 +45,24 @@ function Devices({ username }: { username: string }) {
         }
         setCountryByAgent(map);
       })
-      .catch(() => {}); // best-effort — filter just shows "Unknown" for everyone if this fails
+      .catch(() => {}); // best-effort — ถ้าดึงไม่ได้ ตัว filter ก็แค่ขึ้น "Unknown" ให้ทุกเครื่อง
   }, []);
 
   function reloadRegisteredSerials(): void {
     getAssets()
       .then((res) => setRegisteredSerials(new Set(res.assets.map((a) => a.serialNumber).filter((s): s is string => Boolean(s)))))
-      .catch(() => {}); // best-effort — worst case the button just doesn't hide yet
+      .catch(() => {}); // best-effort — แย่สุดคือปุ่มยังไม่ถูกซ่อนตามที่ควร
   }
 
   useEffect(() => {
     reloadRegisteredSerials();
   }, []);
 
-  // Deep-linked from the Dashboard's "needs attention" list (?agent=<id>) —
-  // opens the drawer straight away instead of making the operator find and
-  // click the device again. ?console=1 (no agent) is kept as a legacy
-  // fallback — the primary way to reach fleet-wide commands is now the
-  // standalone /console page (see the sidebar's "AI Console" entry).
+  // รองรับ deep link จาก list "needs attention" ของ Dashboard (?agent=<id>) —
+  // เปิด drawer ให้เลยโดยไม่ต้องให้ operator มาหาแล้วคลิก device เอง
+  // ส่วน ?console=1 (ไม่มี agent) เก็บไว้เป็น legacy fallback — ทางหลักสำหรับ
+  // สั่งคำสั่งระดับ fleet ตอนนี้คือหน้า /console แบบ standalone แล้ว (ดูเมนู
+  // "AI Console" ใน sidebar)
   useEffect(() => {
     const agentParam = searchParams.get("agent");
     if (agentParam) {
@@ -72,21 +72,21 @@ function Devices({ username }: { username: string }) {
       setSelectedAgentId(null);
       setDrawerOpen(true);
     }
-    // Only ever meant to run once on arrival — the drawer's own open/close
-    // state takes over after that, it shouldn't reset if these params
-    // happen to still be in the URL after the operator closes the drawer.
+    // ตั้งใจให้รันแค่ครั้งเดียวตอนเข้าหน้า — หลังจากนั้น state เปิด/ปิดของ
+    // drawer เองจะเป็นคนควบคุมต่อ ไม่ควร reset แม้ query param พวกนี้จะยังค้าง
+    // อยู่ใน URL หลัง operator ปิด drawer ไปแล้ว
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Wired to the header's global search (AppShell) — Enter there navigates
-  // here with ?q=, filtering by a real substring match on agentId rather
-  // than the search box being decorative.
+  // เชื่อมกับช่องค้นหา global search ที่ header (AppShell) — กด Enter ที่นั่น
+  // จะ navigate มาที่นี่พร้อม ?q= แล้ว filter ด้วยการ match substring จริงกับ
+  // agentId ไม่ใช่แค่ช่องค้นหาไว้ประดับ
   const query = (searchParams.get("q") ?? "").trim().toLowerCase();
 
-  // Populated from whatever the fleet actually reports, not a hardcoded
-  // list — a device's OS platform string (Windows/Linux distro name/darwin)
-  // and geolocated country both vary by deployment, so the dropdown only
-  // ever offers options that exist right now.
+  // ดึงมาจากสิ่งที่ fleet รายงานจริง ไม่ใช่ list ที่ hardcode ไว้ — ทั้ง OS
+  // platform string ของ device (ชื่อ distro ของ Windows/Linux/darwin) และ
+  // country ที่ได้จาก geolocation ต่างก็แปรผันตามการ deploy แต่ละที่ ดังนั้น
+  // dropdown จะมีแค่ตัวเลือกที่มีอยู่จริง ณ ตอนนั้นเท่านั้น
   const countryOptions = useMemo(
     () => Array.from(new Set(Object.values(countryByAgent))).sort(),
     [countryByAgent],

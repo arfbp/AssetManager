@@ -1,13 +1,12 @@
-// A second WebSocket endpoint, separate from the agent hub in ws/server.ts,
-// for browser dashboard clients. Pushes live agent status and command
-// history updates so the frontend doesn't have to poll.
+// WebSocket endpoint ตัวที่สอง แยกจาก agent hub ใน ws/server.ts สำหรับ
+// browser dashboard client push สถานะ agent สดๆ และอัปเดตประวัติคำสั่งไป
+// ให้ เพื่อไม่ต้องให้ frontend คอย poll
 //
-// Attached to the same HTTP server Express listens on (see index.ts) rather
-// than opening its own port — one fewer port to expose/firewall. For
-// production TLS termination, put this behind a reverse proxy (nginx/Caddy)
-// the way most Node deployments do; the agent hub in ws/server.ts handles
-// TLS directly instead because it's the one required to run standalone in
-// this repo's default setup.
+// ต่อพ่วงกับ HTTP server ตัวเดียวกับที่ Express listen อยู่ (ดู index.ts)
+// แทนที่จะเปิด port ใหม่ของตัวเอง — เปิด port/firewall น้อยลงหนึ่งช่อง สำหรับ
+// TLS termination บน production ให้ใส่ reverse proxy (nginx/Caddy) ไว้ด้านหน้า
+// แบบที่ Node deployment ส่วนใหญ่ทำ; agent hub ใน ws/server.ts จัดการ TLS เอง
+// โดยตรงแทน เพราะเป็นตัวที่ต้องรัน standalone ได้ใน default setup ของ repo นี้
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import type { Pool } from "pg";
@@ -32,19 +31,18 @@ export function startDashboardWsServer(
     server: httpServer,
     path: "/ws/dashboard",
     verifyClient: (info, cb) => {
-      // Browsers cannot set custom headers on a native WebSocket, so the
-      // session token can't travel as an Authorization header the way the
-      // agent hub's bearer auth does. It previously rode in the URL's query
-      // string instead — which nginx's default access-log format records
-      // in full, meaning every dashboard session's token was being written
-      // to disk in plaintext on every connect. Sec-WebSocket-Protocol is
-      // the standard workaround for exactly this browser limitation: the
-      // client sets it via `new WebSocket(url, [token])` (see
-      // useDashboardSocket.ts), which becomes a request *header*, not part
-      // of the URL — nginx/access logs never see it. Still the same real,
-      // revocable, per-user session looked up in Postgres
-      // (src/auth/sessions.ts) — not a shared static secret, just carried
-      // differently.
+      // เบราว์เซอร์ตั้ง custom header บน native WebSocket ไม่ได้ ดังนั้น
+      // session token ส่งเป็น Authorization header แบบที่ bearer auth ของ
+      // agent hub ทำไม่ได้ เดิมทีมันเดินทางผ่าน query string ของ URL แทน —
+      // ซึ่ง access-log format default ของ nginx บันทึกไว้เต็มๆ แปลว่า token
+      // ของทุก dashboard session ถูกเขียนลงดิสก์แบบ plaintext ทุกครั้งที่
+      // connect Sec-WebSocket-Protocol คือทางแก้มาตรฐานสำหรับข้อจำกัดนี้ของ
+      // เบราว์เซอร์โดยเฉพาะ: client ตั้งค่าผ่าน `new WebSocket(url, [token])`
+      // (ดู useDashboardSocket.ts) ซึ่งจะกลายเป็น request *header* ไม่ใช่ส่วน
+      // หนึ่งของ URL — nginx/access log จะไม่เห็นมันเลย ยังคงเป็น session
+      // จริง เพิกถอนได้ ต่อ user เดียวกัน ที่ lookup จาก Postgres
+      // (src/auth/sessions.ts) — ไม่ใช่ shared static secret แค่เปลี่ยนวิธี
+      // ขนส่งเท่านั้น
       const token = (info.req.headers["sec-websocket-protocol"] ?? "").split(",")[0]?.trim() ?? "";
       validateSession(pool, token)
         .then((session) => {
@@ -53,11 +51,11 @@ export function startDashboardWsServer(
             cb(false, 401, "unauthorized");
             return;
           }
-          // ws's connection handler below receives this exact same `req`
-          // object as its second argument — stashing the resolved org here
-          // is the standard way to pass data from verifyClient forward,
-          // same trick ws/server.ts's agent-hub verifyClient uses for its
-          // own per-connection org resolution.
+          // connection handler ของ ws ด้านล่างจะได้รับ `req` object ตัวเดียวกัน
+          // นี้เป็น argument ตัวที่สอง — การเก็บ org ที่ resolve แล้วไว้ตรงนี้
+          // คือวิธีมาตรฐานในการส่งข้อมูลต่อจาก verifyClient เหมือนกับที่
+          // verifyClient ของ agent-hub ใน ws/server.ts ใช้สำหรับ resolve org
+          // ต่อ connection ของตัวเอง
           (info.req as IncomingMessage & { orgId?: string }).orgId = session.orgId;
           cb(true);
         })
@@ -69,27 +67,27 @@ export function startDashboardWsServer(
   });
 
   const alive = new WeakMap<WebSocket, boolean>();
-  // Every event broadcast below carries the orgId of the org it's about —
-  // this is what makes multi-tenancy real at the one layer most likely to
-  // leak it silently: without this, any connected browser tab would see
-  // every OTHER org's live agent/telemetry/command updates the instant they
-  // happened, regardless of which org's data the REST API correctly
-  // filters. socketOrg is set once at connect time (a dashboard session's
-  // org never changes mid-connection) and never re-read from anywhere else.
+  // ทุก event ที่ broadcast ด้านล่างจะแนบ orgId ของ org ที่มันเกี่ยวข้องมาด้วย
+  // — นี่คือสิ่งที่ทำให้ multi-tenancy เป็นจริงในเลเยอร์ที่มีโอกาสรั่วไหลแบบ
+  // เงียบๆ มากที่สุด: ถ้าไม่มีส่วนนี้ browser tab ที่เชื่อมต่ออยู่จะเห็นการ
+  // อัปเดต agent/telemetry/command สดๆ ของทุก org อื่นทันทีที่มันเกิดขึ้น
+  // ไม่ว่า REST API จะกรองข้อมูลของ org ไหนถูกต้องแค่ไหนก็ตาม socketOrg ถูก
+  // set ครั้งเดียวตอน connect (org ของ dashboard session ไม่มีวันเปลี่ยนกลาง
+  // connection) และไม่เคยถูกอ่านใหม่จากที่อื่นเลย
   const socketOrg = new WeakMap<WebSocket, string>();
 
   wss.on("connection", (socket, req) => {
     alive.set(socket, true);
     socket.on("pong", () => alive.set(socket, true));
 
-    // Always set — verifyClient rejects the upgrade before this handler
-    // ever runs if no session (and therefore no org) resolved.
+    // มีค่าเสมอ — verifyClient จะปฏิเสธ upgrade ก่อนที่ handler นี้จะทำงาน
+    // ถ้าไม่มี session (และไม่มี org) ถูก resolve
     const orgId = (req as IncomingMessage & { orgId?: string }).orgId!;
     socketOrg.set(socket, orgId);
 
-    // Full snapshot on connect so a freshly-opened dashboard tab isn't
-    // empty until the next state change happens to occur — filtered to
-    // this socket's own org, same boundary as every REST read.
+    // ส่ง snapshot เต็มตอน connect เพื่อไม่ให้ dashboard tab ที่เพิ่งเปิดใหม่
+    // ว่างเปล่าจนกว่า state change ครั้งถัดไปจะเกิดขึ้นเอง — กรองเฉพาะ org ของ
+    // socket นี้ ขอบเขตเดียวกับทุกการอ่านผ่าน REST
     send(socket, {
       type: "snapshot",
       agents: registry.listAll().filter((a) => a.orgId === orgId),
@@ -97,7 +95,7 @@ export function startDashboardWsServer(
     });
 
     socket.on("close", () => {
-      /* nothing to clean up beyond the WeakMap entries, which GC themselves */
+      /* ไม่มีอะไรต้องเคลียร์นอกจาก entry ใน WeakMap ซึ่ง GC จัดการเองอยู่แล้ว */
     });
   });
 
@@ -135,8 +133,8 @@ function send(socket: WebSocket, msg: unknown): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
 }
 
-// Only ever reaches sockets whose own session org matches the event's org —
-// see socketOrg's doc comment above for why this exists at all.
+// ส่งถึงเฉพาะ socket ที่ org ของ session ตัวเองตรงกับ org ของ event เท่านั้น —
+// ดู doc comment ของ socketOrg ด้านบนว่าทำไมถึงต้องมีสิ่งนี้
 function broadcast(wss: WebSocketServer, socketOrg: WeakMap<WebSocket, string>, orgId: string, msg: unknown): void {
   const raw = JSON.stringify(msg);
   for (const socket of wss.clients) {

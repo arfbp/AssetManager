@@ -1,17 +1,18 @@
-// Short-lived, one-time-use store for guardrail verdicts that require human
-// confirmation before dispatch. A dashboard operator reviews the resolved
-// command and target list, then confirms via POST /api/command/:id/confirm
-// — this is the human-in-the-loop step for anything the guardrail flagged
-// as destructive-tier or mass-scope (see security/guardrail.ts).
+// ที่เก็บชั่วคราวแบบใช้ครั้งเดียวสำหรับผลตัดสินของ guardrail ที่ต้องการการ
+// ยืนยันจากมนุษย์ก่อน dispatch operator บน dashboard ตรวจสอบคำสั่งที่ resolve
+// แล้วและ target list จากนั้นยืนยันผ่าน POST /api/command/:id/confirm — นี่คือ
+// ขั้นตอน human-in-the-loop สำหรับทุกอย่างที่ guardrail ตีธงว่าเป็นระดับ
+// destructive หรือ mass-scope (ดู security/guardrail.ts)
 //
-// Generic over the payload shape so the same TTL/sweep machinery backs two
-// independent stores in routes.ts: one for device-targeted actions
-// (PendingAction, unchanged) and one for admin actions (PendingAdminAction,
-// see security/adminGuardrail.ts) — the two are never confirmable through
-// each other's endpoint, kept as separate store instances entirely.
+// เป็น generic ต่อรูปร่างของ payload เพื่อให้กลไก TTL/sweep เดียวกันรองรับ
+// store สองตัวที่แยกอิสระกันใน routes.ts: ตัวหนึ่งสำหรับ action ที่เจาะจง
+// device (PendingAction เดิม) และอีกตัวสำหรับ admin action (PendingAdminAction
+// ดู security/adminGuardrail.ts) — สอง store นี้ยืนยันข้าม endpoint ของกันและ
+// กันไม่ได้เลย แยก instance กันโดยสิ้นเชิง
 import { randomUUID } from "node:crypto";
 import type { ResolvedCommand } from "../security/guardrail.js";
 import type { ConfirmableAdminAction } from "../security/adminGuardrail.js";
+import type { ConfirmableErpAction } from "../security/erpGuardrail.js";
 
 export interface PendingAction {
   id: string;
@@ -32,6 +33,17 @@ export interface PendingAdminAction {
   createdAt: number;
 }
 
+// Store อิสระตัวที่สาม (ดู pendingErp ใน routes.ts) — ERP action ก็ยืนยัน
+// ข้าม pending-ID space ของ device หรือ admin ไม่ได้เช่นกัน
+export interface PendingErpAction {
+  id: string;
+  resolved: ConfirmableErpAction;
+  reason: string;
+  requestedBy: string;
+  originalText: string;
+  createdAt: number;
+}
+
 const TTL_MS = 5 * 60 * 1000;
 
 export class PendingActionStore<T extends { id: string; createdAt: number }> {
@@ -44,7 +56,7 @@ export class PendingActionStore<T extends { id: string; createdAt: number }> {
     return action;
   }
 
-  /** Retrieves and removes the pending action — confirmation is one-time-use, never replayable. */
+  /** ดึงและลบ pending action ออก — การยืนยันใช้ได้ครั้งเดียว เล่นซ้ำไม่ได้ */
   take(id: string): T | null {
     this.sweep();
     const action = this.store.get(id);

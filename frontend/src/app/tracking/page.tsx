@@ -9,14 +9,14 @@ import { useDashboardSocket } from "@/hooks/useDashboardSocket";
 import { getFleetLocations } from "@/lib/api";
 import type { DeviceLocationEntry } from "@/lib/types";
 
-// Leaflet touches `window`/`document` at import time, so it can never run
-// during Next.js's server-side render — this defers loading it to the
-// browser only, same reason every Leaflet-in-Next.js guide does this.
+// Leaflet เข้าถึง `window`/`document` ตั้งแต่ตอน import เลย จึงรันตอน
+// server-side render ของ Next.js ไม่ได้ — เลยต้อง defer ให้โหลดเฉพาะฝั่ง
+// browser เหตุผลเดียวกับที่ทุกคู่มือ Leaflet-in-Next.js แนะนำให้ทำแบบนี้
 const LiveMap = dynamic(() => import("@/components/tracking/LiveMap").then((m) => m.LiveMap), { ssr: false });
 
-// A device only has anything worth showing in the detail panel once its IP
-// has actually resolved to something — a private address, or a public one
-// the lookup failed on, has no city/isp/asn/zip/timezone to display at all.
+// device จะมีอะไรให้แสดงใน detail panel ก็ต่อเมื่อ IP ของมัน resolve ออกมา
+// เป็นข้อมูลจริง ๆ แล้วเท่านั้น — ที่อยู่แบบ private หรือ public ที่ lookup
+// ไม่สำเร็จ จะไม่มี city/isp/asn/zip/timezone ให้แสดงเลย
 function hasResolvedInfo(d: DeviceLocationEntry): boolean {
   return Boolean(d.city || d.isp || d.asn || d.zip);
 }

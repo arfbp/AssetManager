@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 
-// A searchable device picker, not a plain long <select> — used anywhere a
-// page needs to name one online device before dispatching a run_script.
-// Only ever lists online agents: run_script has no delivery queue, so
-// offline just means the command never arrives.
+// ช่องเลือกอุปกรณ์แบบค้นหาได้ ไม่ใช่ <select> ยาวๆ ธรรมดา — ใช้ทุกที่ที่
+// หน้าต้องระบุอุปกรณ์ online หนึ่งเครื่องก่อนยิง run_script แสดงเฉพาะ
+// agent ที่ online เท่านั้น เพราะ run_script ไม่มีคิวส่งงานรอ ถ้า offline
+// คำสั่งก็แค่ไปไม่ถึงปลายทางเลย
 export function DeviceSearchSelect({
   agentId,
   onChange,

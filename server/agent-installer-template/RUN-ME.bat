@@ -1,7 +1,7 @@
 @echo off
-REM Double-click this file. It will ask for Administrator permission once
-REM (a Windows security requirement for installing any service - cannot be
-REM skipped) then install and start the OptiFleet AI Agent automatically.
+REM ดับเบิลคลิกไฟล์นี้ มันจะขอสิทธิ์ Administrator หนึ่งครั้ง (ข้อกำหนดด้าน
+REM ความปลอดภัยของ Windows สำหรับการติดตั้ง service ใดๆ ข้ามไม่ได้)
+REM จากนั้นจะติดตั้งและสตาร์ต OptiFleet AI Agent ให้อัตโนมัติ
 
 net session >nul 2>&1
 if %errorlevel% == 0 goto :run
